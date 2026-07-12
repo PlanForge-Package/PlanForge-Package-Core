@@ -1,0 +1,51 @@
+{
+  "name": "@figam-dev-variable-tools/design-kit",
+  "version": "0.1.0",
+  "description": "Figma Dev Tools 디자인 키트 — Figma ⇄ Storybook 양방향 디자인 시스템의 React 컴포넌트 + 디자인 토큰(3 프리셋). CSS 변수 기반, 런타임 의존 없음(react만 peer).",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/types/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/lib.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./tokens.css": "./dist/tokens.css",
+    "./tokens/*.css": "./dist/tokens/*.css",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "design-system",
+    "react",
+    "components",
+    "ui",
+    "design-tokens",
+    "figma",
+    "storybook",
+    "css-variables"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Figam-Dev-Variable-Tools/Design-System-Npm-Tools.git"
+  },
+  "homepage": "https://figam-dev-variable-tools.github.io/Design-System-Hub-Tools/docs/",
+  "bugs": {
+    "url": "https://github.com/Figam-Dev-Variable-Tools/Design-System-Npm-Tools/issues"
+  }
+}
