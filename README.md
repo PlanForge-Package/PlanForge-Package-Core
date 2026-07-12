@@ -8,9 +8,14 @@
 
 Figma Dev Tools 디자인 시스템의 React 컴포넌트 키트입니다. Figma 플러그인과 Storybook이 같은 토큰(`tokens/*.json`)으로 만든 91개 컴포넌트를 npm으로 바로 가져다 씁니다.
 
+- **npm**: https://www.npmjs.com/package/@figam-dev-variable-tools/design-kit
+- **문서(컴포넌트·변수 조합)**: https://figam-dev-variable-tools.github.io/Design-System-Hub-Tools/docs/
+
+특징:
+
 - CSS 변수(`--ds-*`) 기반 — 프리셋(bootstrap / tailwind / toss) 전환을 `data-theme`으로
 - 런타임 의존 없음 — styled-components / emotion 불필요, react만 peer
-- Figma ⇄ Storybook 100% 동기화 — [문서](https://figam-dev-variable-tools.github.io/Design-System-Hub-Tools/docs/)
+- Figma ⇄ Storybook 100% 동기화
 
 ## 지원 패키지 매니저
 
