@@ -10,6 +10,7 @@ import { OperaApiError, OperaAuthError } from './opera/errors.js';
 import authPlugin from './plugins/auth.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { healthRoutes } from './routes/health.js';
+import { housekeepingRoutes } from './routes/housekeeping.js';
 import { rateRoutes } from './routes/rates.js';
 import { reservationRoutes } from './routes/reservations.js';
 
@@ -47,6 +48,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(healthRoutes);
   await app.register(availabilityRoutes);
+  await app.register(housekeepingRoutes);
   await app.register(rateRoutes);
   await app.register(reservationRoutes);
 

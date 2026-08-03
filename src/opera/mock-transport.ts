@@ -101,6 +101,9 @@ function dayOffset(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** OPERA 가 허용하는 객실 상태. */
+const ROOM_STATUSES = ['Clean', 'Dirty', 'Inspected', 'OutOfOrder', 'OutOfService'];
+
 /** 객실 타입별 기준 요금. 실제로는 OPERA 의 요금 엔진이 정한다. */
 const RATES: Record<string, number> = { STDT: 190000, DLXK: 240000, SUIT: 400000 };
 const ROOM_TYPE_NAMES: Record<string, string> = {
@@ -115,8 +118,29 @@ function nights(arrival: string, departure: string): number {
   return Math.max(1, Math.round((to - from) / 86_400_000));
 }
 
+/** 모의 객실 상태. 실제로는 OPERA 가 들고 있다. */
+const rooms = new Map<string, { roomStatus: string; occupied: boolean }>();
+
+function seedRooms(): void {
+  if (rooms.size > 0) return;
+  const base: Array<[string, string, boolean]> = [
+    ['1101', 'Clean', false],
+    ['1102', 'Dirty', false],
+    ['1103', 'Inspected', false],
+    ['1201', 'Clean', false],
+    ['1202', 'Clean', false],
+    ['1203', 'Inspected', true],
+    ['1501', 'Clean', false],
+    ['1502', 'OutOfOrder', false],
+  ];
+  for (const [roomId, roomStatus, occupied] of base) {
+    rooms.set(roomId, { roomStatus, occupied });
+  }
+}
+
 export function mockOperaRequest<T>(path: string, options: OperaRequestOptions): T {
   seed();
+  seedRooms();
 
   const method = options.method ?? 'GET';
   const query = options.query ?? {};
@@ -173,6 +197,43 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
         total: { amount: (RATES[code] ?? 0) * stayNights, currencyCode: 'KRW' },
       })),
     } as T;
+  }
+
+  // --- 하우스키핑: 객실 상태 --------------------------------------------
+  if (method === 'GET' && /\/hsk\/v1\/hotels\/[^/]+\/rooms$/.test(path)) {
+    const wanted = query.roomStatus ? String(query.roomStatus) : undefined;
+    return {
+      rooms: [...rooms.entries()]
+        .filter(([, room]) => !wanted || room.roomStatus === wanted)
+        .map(([roomId, room]) => ({ hotelId, roomId, ...room })),
+    } as T;
+  }
+
+  const statusMatch = /\/hsk\/v1\/hotels\/[^/]+\/rooms\/([^/]+)\/status$/.exec(path);
+  if (statusMatch && (method === 'PUT' || method === 'PATCH')) {
+    const roomId = decodeURIComponent(statusMatch[1] ?? '');
+    const room = rooms.get(roomId);
+    if (!room) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `객실을 찾을 수 없습니다: ${roomId}`);
+    }
+
+    const next = String(body.roomStatus ?? '');
+    if (!ROOM_STATUSES.includes(next)) {
+      throw new OperaApiError(400, { detail: 'INVALID_STATUS' }, `알 수 없는 객실 상태: ${next}`);
+    }
+
+    // 재실 중인 객실을 판매 불가로 돌리면 재고와 실제가 어긋난다. OPERA 도 막는다.
+    if (room.occupied && (next === 'OutOfOrder' || next === 'OutOfService')) {
+      throw new OperaApiError(
+        400,
+        { detail: 'ROOM_OCCUPIED' },
+        '재실 중인 객실은 판매 불가 상태로 변경할 수 없습니다.',
+      );
+    }
+
+    const updated = { ...room, roomStatus: next };
+    rooms.set(roomId, updated);
+    return { hotelId, roomId, ...updated } as T;
   }
 
   // --- 예약 목록 ---------------------------------------------------------
@@ -310,5 +371,6 @@ function addDays(date: string, days: number): string {
 /** 테스트가 상태를 초기화할 때 쓴다. */
 export function resetMockStore(): void {
   store.clear();
+  rooms.clear();
   sequence = SEQUENCE_START;
 }
