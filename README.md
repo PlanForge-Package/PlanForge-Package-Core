@@ -59,6 +59,10 @@ pnpm dev
 | `GET` | `/v1/profiles/:profileId` | 게스트 프로필 단건 |
 | `POST` | `/v1/profiles/:profileId/merge` | 중복 프로필 병합 |
 
+예약 경로는 OPERA 를 따라 세 축(`sourceCode` · `marketCode` · `channelCode`)으로 둡니다.
+설정에 없는 코드는 거절합니다 — 통과시키면 오타가 그대로 집계에 들어가 `BOOKINGCOM` 과
+`BOOKING.COM` 이 서로 다른 채널이 되고, 채널별 실적은 그 순간부터 신뢰할 수 없습니다.
+
 영업일은 달력 날짜와 다릅니다. 야간 감사를 돌리기 전까지는 자정을 넘겨도 어제가
 영업일로 남고, 매출과 점유율이 어느 날짜에 붙는지가 그 값으로 정해집니다. 마감을
 언제 돌렸는지는 OPERA 만 알기 때문에 계산하지 않고 그대로 읽습니다.

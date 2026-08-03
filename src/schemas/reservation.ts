@@ -30,6 +30,19 @@ export const Reservation = Type.Object({
   currency: Type.Optional(Type.String()),
   /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
   blockCode: Type.Optional(Type.String()),
+  /**
+   * 예약이 들어온 경로.
+   *
+   * OPERA 는 세 축으로 나눈다. 셋을 하나로 합치면 "OTA 를 통해 들어온 법인 예약"
+   * 같은 조합을 구분할 수 없어 채널별 수익성 판단이 무너진다.
+   *
+   * - source: 예약을 받은 방법 (직접·전화·워크인·OTA·GDS)
+   * - market: 손님의 성격 (개인·법인·단체·레저)
+   * - channel: 구체적인 판매 채널 (BOOKINGCOM·EXPEDIA·WEB …)
+   */
+  sourceCode: Type.Optional(Type.String()),
+  marketCode: Type.Optional(Type.String()),
+  channelCode: Type.Optional(Type.String()),
   guest: Type.Optional(
     Type.Object({
       profileId: Type.Optional(Type.String()),
@@ -45,6 +58,8 @@ export const ReservationListQuery = Type.Object({
   arrivalDate: Type.Optional(DateString),
   departureDate: Type.Optional(DateString),
   status: Type.Optional(ReservationStatus),
+  sourceCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  channelCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })),
   offset: Type.Optional(Type.Integer({ minimum: 0, default: 0 })),
 });
@@ -71,6 +86,10 @@ export const CreateReservationBody = Type.Object({
   children: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
   /** 단체 블록에서 빼는 예약이면 블록 코드를 넘긴다. 픽업으로 잡힌다. */
   blockCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  /** 예약 경로. 비우면 OPERA 가 기본값(직접 예약)으로 잡는다. */
+  sourceCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  marketCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  channelCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   guest: Type.Object({
     /** 기존 OPERA 프로필이 있으면 넘긴다. 없으면 이름으로 새로 만든다. */
     profileId: Type.Optional(Type.String()),

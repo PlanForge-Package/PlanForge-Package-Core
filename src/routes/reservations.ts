@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { operaRequest } from '../opera/client.js';
 import {
   toOperaRoomStay,
+  toOperaSourceOfBusiness,
   toReservation,
   type OperaReservationListPayload,
   type OperaReservationPayload,
@@ -38,7 +39,16 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     async (request) => {
-      const { hotelId, arrivalDate, departureDate, status, limit = 50, offset = 0 } = request.query;
+      const {
+        hotelId,
+        arrivalDate,
+        departureDate,
+        status,
+        sourceCode,
+        channelCode,
+        limit = 50,
+        offset = 0,
+      } = request.query;
       const hotel = hotelId ?? env.ohip.defaultHotelId;
 
       const raw = await operaRequest<OperaReservationListPayload>(
@@ -49,6 +59,8 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
             arrivalStartDate: arrivalDate,
             departureEndDate: departureDate,
             reservationStatus: status,
+            sourceCode,
+            channelCode,
             limit,
             offset,
           },
@@ -97,6 +109,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     async (request, reply) => {
       const { hotelId, guest, ...stay } = request.body;
       const hotel = hotelId ?? env.ohip.defaultHotelId;
+      const sourceOfBusiness = toOperaSourceOfBusiness(stay);
 
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations`,
@@ -105,6 +118,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
           hotelId: hotel,
           body: {
             roomStay: toOperaRoomStay(stay),
+            ...(sourceOfBusiness ? { sourceOfBusiness } : {}),
             guest: {
               ...(guest.profileId ? { profileId: guest.profileId } : {}),
               givenName: guest.firstName,

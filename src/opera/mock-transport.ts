@@ -30,7 +30,18 @@ interface MockReservation {
     blockCode?: string;
   };
   guest: { profileId: string; givenName: string; surname: string; email?: string };
+  sourceOfBusiness: { sourceCode: string; marketCode: string; channelCode?: string };
 }
+
+/**
+ * OPERA 가 아는 예약 경로 코드.
+ *
+ * 실제로는 호텔마다 설정에서 정하지만, 아무 문자열이나 받으면 오타가 그대로
+ * 집계에 들어가 "BOOKINGCOM" 과 "BOOKING.COM" 이 다른 채널이 된다.
+ */
+const SOURCE_CODES = ['DIRECT', 'PHONE', 'WALKIN', 'OTA', 'GDS', 'CORPORATE'];
+const MARKET_CODES = ['TRANSIENT', 'CORPORATE', 'GROUP', 'LEISURE', 'GOVERNMENT'];
+const CHANNEL_CODES = ['WEB', 'MOBILE', 'BOOKINGCOM', 'EXPEDIA', 'AGODA', 'YANOLJA', 'FRONTDESK'];
 
 /** 모의 저장소. 프로세스가 살아 있는 동안만 유지된다. */
 const store = new Map<string, MockReservation>();
@@ -68,6 +79,11 @@ function seed(): void {
         surname: 'Kang',
         email: 'jaeho.kang@example.com',
       },
+      sourceOfBusiness: {
+        sourceCode: 'OTA',
+        marketCode: 'LEISURE',
+        channelCode: 'BOOKINGCOM',
+      },
     },
     {
       reservationId: 'OPERA-1002',
@@ -88,6 +104,11 @@ function seed(): void {
         givenName: 'Mina',
         surname: 'Seo',
         email: 'mina.seo@example.com',
+      },
+      sourceOfBusiness: {
+        sourceCode: 'CORPORATE',
+        marketCode: 'CORPORATE',
+        channelCode: 'FRONTDESK',
       },
     },
   ];
@@ -291,6 +312,22 @@ function seedRooms(): void {
   ];
   for (const [roomId, roomStatus, occupied] of base) {
     rooms.set(roomId, { roomStatus, occupied });
+  }
+}
+
+/**
+ * 설정에 없는 코드는 거절한다.
+ *
+ * 통과시키면 오타가 그대로 집계에 들어가 "BOOKINGCOM" 과 "BOOKING.COM" 이 서로
+ * 다른 채널이 된다. 채널별 실적은 그 순간부터 신뢰할 수 없다.
+ */
+function assertCode(allowed: string[], value: string, label: string): void {
+  if (!allowed.includes(value)) {
+    throw new OperaApiError(
+      400,
+      { detail: 'INVALID_CODE' },
+      `알 수 없는 ${label} 코드입니다: ${value}. 가능한 값: ${allowed.join(', ')}`,
+    );
   }
 }
 
@@ -627,6 +664,12 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     if (query.blockCode) {
       items = items.filter((r) => r.roomStay.blockCode === String(query.blockCode));
     }
+    if (query.sourceCode) {
+      items = items.filter((r) => r.sourceOfBusiness.sourceCode === String(query.sourceCode));
+    }
+    if (query.channelCode) {
+      items = items.filter((r) => r.sourceOfBusiness.channelCode === String(query.channelCode));
+    }
 
     if (query.reservationStatus) {
       items = items.filter((r) => r.reservationStatus === query.reservationStatus);
@@ -692,6 +735,17 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       assertPickupPossible(block, roomType, arrival, departure);
     }
 
+    const business = (body.sourceOfBusiness ?? {}) as Record<string, unknown>;
+    const sourceCode = String(business.sourceCode ?? 'DIRECT').toUpperCase();
+    const marketCode = String(business.marketCode ?? 'TRANSIENT').toUpperCase();
+    const channelCode = business.channelCode
+      ? String(business.channelCode).toUpperCase()
+      : undefined;
+
+    assertCode(SOURCE_CODES, sourceCode, '예약 출처');
+    assertCode(MARKET_CODES, marketCode, '시장 구분');
+    if (channelCode) assertCode(CHANNEL_CODES, channelCode, '판매 채널');
+
     /*
      * 넘어온 프로필 ID 는 그대로 존중한다.
      *
@@ -747,6 +801,11 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
             surname: String(guest.surname ?? ''),
             email: guest.email ? String(guest.email) : undefined,
           },
+      sourceOfBusiness: {
+        sourceCode,
+        marketCode,
+        ...(channelCode ? { channelCode } : {}),
+      },
     };
 
     store.set(created.reservationId, created);

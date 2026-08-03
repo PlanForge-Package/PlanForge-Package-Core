@@ -25,6 +25,12 @@ export interface OperaReservationPayload {
     total?: { amount?: number; currencyCode?: string };
     blockCode?: string;
   };
+  /** 예약 경로. OPERA 는 roomStay 가 아니라 예약 본문에 둔다. */
+  sourceOfBusiness?: {
+    sourceCode?: string;
+    marketCode?: string;
+    channelCode?: string;
+  };
   guest?: {
     profileId?: string;
     givenName?: string;
@@ -54,6 +60,9 @@ export function toReservation(raw: OperaReservationPayload): Reservation {
     totalAmount: raw.roomStay?.total?.amount,
     currency: raw.roomStay?.total?.currencyCode,
     blockCode: raw.roomStay?.blockCode,
+    sourceCode: raw.sourceOfBusiness?.sourceCode,
+    marketCode: raw.sourceOfBusiness?.marketCode,
+    channelCode: raw.sourceOfBusiness?.channelCode,
     guest: raw.guest && {
       profileId: raw.guest.profileId,
       firstName: raw.guest.givenName,
@@ -61,6 +70,25 @@ export function toReservation(raw: OperaReservationPayload): Reservation {
       email: raw.guest.email,
     },
   };
+}
+
+/**
+ * 예약 경로를 OPERA 형태로 바꾼다.
+ *
+ * 하나도 지정되지 않았으면 아예 보내지 않는다. 빈 객체를 보내면 OPERA 가 기존
+ * 값을 지우는 것으로 읽을 수 있다.
+ */
+export function toOperaSourceOfBusiness(input: {
+  sourceCode?: string;
+  marketCode?: string;
+  channelCode?: string;
+}): Record<string, unknown> | undefined {
+  const payload = {
+    ...(input.sourceCode ? { sourceCode: input.sourceCode } : {}),
+    ...(input.marketCode ? { marketCode: input.marketCode } : {}),
+    ...(input.channelCode ? { channelCode: input.channelCode } : {}),
+  };
+  return Object.keys(payload).length > 0 ? payload : undefined;
 }
 
 /** PlanForge 요청을 OPERA 가 기대하는 형태로 바꾼다. */
