@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { OperaApiError } from './errors.js';
+import { mockOperaRequest } from './mock-transport.js';
 import { tokenStore } from './token-store.js';
 
 export interface OperaRequestOptions {
@@ -27,6 +28,11 @@ function buildUrl(path: string, query: OperaRequestOptions['query']): URL {
  * 재시도 정책은 호출자(BE)가 결정한다.
  */
 export async function operaRequest<T>(path: string, options: OperaRequestOptions = {}): Promise<T> {
+  // 모의 모드는 전송 계층만 대체한다. 호출부와 응답 매핑은 live 와 동일하게 돈다.
+  if (env.ohip.mode === 'mock') {
+    return mockOperaRequest<T>(path, options);
+  }
+
   const { method = 'GET', query, body, hotelId } = options;
   const url = buildUrl(path, query);
 

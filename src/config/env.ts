@@ -27,6 +27,14 @@ export const env = {
 
   /** Oracle Hospitality Integration Platform */
   ohip: {
+    /**
+     * `mock` 이면 OHIP 로 나가지 않고 OPERA 형태의 모의 응답을 돌려준다.
+     *
+     * 구독 스펙과 자격 증명이 없어도 FE·BE 까지 전 구간을 개발하고 검증하기
+     * 위해서다. 응답 형태와 매핑 코드는 실제 경로와 동일하게 태우므로,
+     * 나중에 live 로 바꿀 때 달라지는 것은 전송 계층뿐이다.
+     */
+    mode: optional('OHIP_MODE', 'mock') === 'live' ? ('live' as const) : ('mock' as const),
     baseUrl: optional('OHIP_BASE_URL', 'https://api.oracle-hospitality.example/'),
     /** OHIP Gateway 에서 발급한 애플리케이션 키 (x-app-key) */
     appKey: process.env.OHIP_APP_KEY ?? '',
@@ -48,6 +56,12 @@ export function assertProductionEnv(): void {
   if (env.nodeEnv !== 'production') return;
 
   required('SERVICE_API_KEY');
+
+  // 모의 모드로 운영에 뜨면 가짜 예약이 진짜처럼 돌아다닌다. 기동을 막는다.
+  if (env.ohip.mode !== 'live') {
+    throw new Error('운영 환경에서는 OHIP_MODE=live 여야 합니다.');
+  }
+
   required('OHIP_BASE_URL');
   required('OHIP_APP_KEY');
   required('OHIP_CLIENT_ID');

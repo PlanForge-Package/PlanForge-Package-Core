@@ -10,6 +10,7 @@ import { OperaApiError, OperaAuthError } from './opera/errors.js';
 import authPlugin from './plugins/auth.js';
 import { availabilityRoutes } from './routes/availability.js';
 import { healthRoutes } from './routes/health.js';
+import { rateRoutes } from './routes/rates.js';
 import { reservationRoutes } from './routes/reservations.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -46,6 +47,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(healthRoutes);
   await app.register(availabilityRoutes);
+  await app.register(rateRoutes);
   await app.register(reservationRoutes);
 
   // OPERA 오류를 게이트웨이 표준 응답으로 변환한다.

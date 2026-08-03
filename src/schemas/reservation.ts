@@ -26,6 +26,8 @@ export const Reservation = Type.Object({
   roomNumber: Type.Optional(Type.String()),
   adults: Type.Optional(Type.Integer()),
   children: Type.Optional(Type.Integer()),
+  totalAmount: Type.Optional(Type.Number()),
+  currency: Type.Optional(Type.String()),
   guest: Type.Optional(
     Type.Object({
       profileId: Type.Optional(Type.String()),
@@ -55,6 +57,41 @@ export const ReservationListResponse = Type.Object({
 export const ReservationIdParams = Type.Object({
   reservationId: Type.String({ minLength: 1 }),
 });
+
+/** 예약 생성. 요금과 재고 판단은 OPERA 가 한다 — 여기서 계산하지 않는다. */
+export const CreateReservationBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+  arrivalDate: DateString,
+  departureDate: DateString,
+  roomTypeCode: Type.String({ minLength: 1 }),
+  ratePlanCode: Type.Optional(Type.String({ minLength: 1 })),
+  adults: Type.Integer({ minimum: 1, maximum: 10 }),
+  children: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
+  guest: Type.Object({
+    /** 기존 OPERA 프로필이 있으면 넘긴다. 없으면 이름으로 새로 만든다. */
+    profileId: Type.Optional(Type.String()),
+    firstName: Type.String({ minLength: 1 }),
+    lastName: Type.String({ minLength: 1 }),
+    email: Type.Optional(Type.String({ format: 'email' })),
+  }),
+});
+
+export const UpdateReservationBody = Type.Object({
+  arrivalDate: Type.Optional(DateString),
+  departureDate: Type.Optional(DateString),
+  roomTypeCode: Type.Optional(Type.String({ minLength: 1 })),
+  ratePlanCode: Type.Optional(Type.String({ minLength: 1 })),
+  adults: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+  children: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
+});
+
+export const CancelReservationBody = Type.Object({
+  reason: Type.Optional(Type.String({ maxLength: 200 })),
+});
+
+export type CreateReservationBody = Static<typeof CreateReservationBody>;
+export type UpdateReservationBody = Static<typeof UpdateReservationBody>;
+export type CancelReservationBody = Static<typeof CancelReservationBody>;
 
 export type Reservation = Static<typeof Reservation>;
 export type ReservationListQuery = Static<typeof ReservationListQuery>;
