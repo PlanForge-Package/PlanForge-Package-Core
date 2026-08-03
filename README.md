@@ -41,8 +41,26 @@ pnpm dev
 | --- | --- | --- |
 | `GET` | `/health` | 서비스 상태 |
 | `GET` | `/v1/availability` | 기간별 객실 가용 현황 |
+| `GET` | `/v1/rates` | 기간 요금 |
 | `GET` | `/v1/reservations` | 예약 목록 |
 | `GET` | `/v1/reservations/:reservationId` | 예약 단건 |
+| `POST` | `/v1/reservations` | 예약 생성 |
+| `PATCH` | `/v1/reservations/:reservationId` | 예약 수정 |
+| `POST` | `/v1/reservations/:reservationId/cancel` | 예약 취소 |
+| `GET` | `/v1/blocks` | 단체 블록 목록 |
+| `GET` | `/v1/blocks/:blockId` | 블록 단건 — 일자·객실 타입별 할당 |
+| `GET` | `/v1/blocks/:blockId/reservations` | 룸리스트 |
+| `POST` | `/v1/blocks` | 블록 생성 |
+| `PATCH` | `/v1/blocks/:blockId` | 블록 수정 |
+| `GET` | `/v1/housekeeping/rooms` | 객실 상태 |
+| `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | 객실 상태 변경 |
+
+### 오류 변환
+
+OPERA 가 거절한 사유 중 호출자가 고칠 수 있는 것(400·404·409·422)은 상태 코드와
+메시지를 그대로 내려보냅니다. 전부 502 로 뭉개면 "출발일이 도착일보다 앞섭니다" 같은
+입력 오류가 화면에서 게이트웨이 장애로 보이고, FE 는 재시도해도 소용없는 요청을
+다시 보냅니다. 401·403 은 우리 자격 증명 문제이므로 502 로 감춥니다.
 
 스키마는 TypeBox 로 선언하며, 런타임 검증과 OpenAPI 문서가 같은 정의에서 나옵니다.
 `pnpm openapi:export` 로 `openapi/planforge-core.json` 을 생성해 BE 클라이언트 생성에 씁니다.
@@ -55,9 +73,11 @@ src/
   opera/
     token-store.ts     OHIP OAuth2 토큰 캐시 (동시 갱신 병합, 401 시 무효화)
     client.ts          OHIP REST 호출 래퍼 (401 1회 재시도)
+    mock-transport.ts  OHIP_MODE=mock 일 때의 모의 전송 계층
+    reservation-mapper.ts / block-mapper.ts   OPERA ↔ PlanForge 매핑
     errors.ts          OperaApiError / OperaAuthError
   plugins/auth.ts      내부 서비스 API 키 인증
-  routes/              가용 현황 · 예약 라우트
+  routes/              가용 현황 · 요금 · 예약 · 블록 · 하우스키핑 라우트
   schemas/             TypeBox 요청/응답 스키마
   scripts/             OpenAPI 문서 내보내기
 ```

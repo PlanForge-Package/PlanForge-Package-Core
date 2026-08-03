@@ -28,6 +28,8 @@ export const Reservation = Type.Object({
   children: Type.Optional(Type.Integer()),
   totalAmount: Type.Optional(Type.Number()),
   currency: Type.Optional(Type.String()),
+  /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
+  blockCode: Type.Optional(Type.String()),
   guest: Type.Optional(
     Type.Object({
       profileId: Type.Optional(Type.String()),
@@ -67,6 +69,8 @@ export const CreateReservationBody = Type.Object({
   ratePlanCode: Type.Optional(Type.String({ minLength: 1 })),
   adults: Type.Integer({ minimum: 1, maximum: 10 }),
   children: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
+  /** 단체 블록에서 빼는 예약이면 블록 코드를 넘긴다. 픽업으로 잡힌다. */
+  blockCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   guest: Type.Object({
     /** 기존 OPERA 프로필이 있으면 넘긴다. 없으면 이름으로 새로 만든다. */
     profileId: Type.Optional(Type.String()),

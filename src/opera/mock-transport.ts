@@ -26,6 +26,8 @@ interface MockReservation {
     adultCount: number;
     childCount: number;
     total?: { amount: number; currencyCode: string };
+    /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
+    blockCode?: string;
   };
   guest: { profileId: string; givenName: string; surname: string; email?: string };
 }
@@ -121,6 +123,125 @@ function nights(arrival: string, departure: string): number {
 /** 모의 객실 상태. 실제로는 OPERA 가 들고 있다. */
 const rooms = new Map<string, { roomStatus: string; occupied: boolean }>();
 
+interface MockBlockAllocation {
+  date: string;
+  roomType: string;
+  roomsBlocked: number;
+  roomsPickedUp: number;
+  ratePlanCode?: string;
+  amount?: number;
+}
+
+interface MockBlock {
+  blockId: string;
+  blockCode: string;
+  blockName: string;
+  hotelId: string;
+  blockStatus: string;
+  startDate: string;
+  endDate: string;
+  cutoffDate?: string;
+  currencyCode: string;
+  roomTypeAllocations: MockBlockAllocation[];
+}
+
+const blocks = new Map<string, MockBlock>();
+
+/** 블록 번호도 예약과 마찬가지로 시드와 겹치지 않는 지점에서 시작한다. */
+const BLOCK_SEQUENCE_START = 500;
+let blockSequence = BLOCK_SEQUENCE_START;
+
+/** 블록이 재고를 잡는 단위는 '박'이다. 출발일 당일은 포함하지 않는다. */
+function stayDates(startDate: string, endDate: string): string[] {
+  const count = nights(startDate, endDate);
+  return Array.from({ length: count }, (_, i) => addDays(startDate, i));
+}
+
+function seedBlocks(): void {
+  if (blocks.size > 0) return;
+
+  const base: MockBlock[] = [
+    {
+      blockId: 'BLK-1001',
+      blockCode: 'SPGRP',
+      blockName: '스페이스플래닝 워크숍',
+      hotelId: 'SAND01',
+      blockStatus: 'Definite',
+      startDate: dayOffset(7),
+      endDate: dayOffset(9),
+      cutoffDate: dayOffset(3),
+      currencyCode: 'KRW',
+      roomTypeAllocations: stayDates(dayOffset(7), dayOffset(9)).flatMap((date) => [
+        { date, roomType: 'STDT', roomsBlocked: 12, roomsPickedUp: 5, ratePlanCode: 'CORP' },
+        { date, roomType: 'DLXK', roomsBlocked: 4, roomsPickedUp: 1, ratePlanCode: 'CORP' },
+      ]),
+    },
+    {
+      blockId: 'BLK-1002',
+      blockCode: 'WEDKM',
+      blockName: '김·문 웨딩 하객',
+      hotelId: 'SAND01',
+      blockStatus: 'Tentative',
+      startDate: dayOffset(21),
+      endDate: dayOffset(22),
+      cutoffDate: dayOffset(14),
+      currencyCode: 'KRW',
+      roomTypeAllocations: stayDates(dayOffset(21), dayOffset(22)).flatMap((date) => [
+        { date, roomType: 'DLXK', roomsBlocked: 8, roomsPickedUp: 0, ratePlanCode: 'BAR' },
+      ]),
+    },
+  ];
+
+  for (const block of base) {
+    blocks.set(block.blockId, block);
+  }
+}
+
+/**
+ * 이 예약을 블록에서 뺄 수 있는지 확인한다.
+ *
+ * 잡아 두지 않은 객실 타입이나 기간을 그냥 통과시키면 룸리스트에는 예약이
+ * 보이는데 픽업은 0 으로 남는다. 두 숫자가 어긋나면 컷오프 때 남은 객실을
+ * 풀지 판단할 근거가 사라진다. 그래서 거절한다.
+ */
+function assertPickupPossible(
+  block: MockBlock,
+  roomType: string,
+  arrival: string,
+  departure: string,
+): void {
+  for (const date of stayDates(arrival, departure)) {
+    const slot = block.roomTypeAllocations.find((a) => a.date === date && a.roomType === roomType);
+    if (!slot) {
+      throw new OperaApiError(
+        400,
+        { detail: 'BLOCK_NO_ALLOTMENT' },
+        `블록 ${block.blockCode} 는 ${date} 에 ${roomType} 객실을 잡아 두지 않았습니다.`,
+      );
+    }
+    if (slot.roomsPickedUp >= slot.roomsBlocked) {
+      throw new OperaApiError(
+        400,
+        { detail: 'BLOCK_EXHAUSTED' },
+        `블록 ${block.blockCode} 의 ${date} ${roomType} 할당이 모두 소진되었습니다.`,
+      );
+    }
+  }
+}
+
+/**
+ * 블록 코드로 예약이 들어오면 해당 일자·객실 타입의 픽업을 올린다.
+ *
+ * 픽업이 늘지 않으면 블록이 얼마나 소진됐는지 알 수 없다. 실제 OPERA 도
+ * 예약 시점에 갱신한다. 호출 전에 assertPickupPossible 로 걸러 둔다.
+ */
+function applyPickup(block: MockBlock, roomType: string, arrival: string, departure: string): void {
+  for (const date of stayDates(arrival, departure)) {
+    const slot = block.roomTypeAllocations.find((a) => a.date === date && a.roomType === roomType);
+    if (slot) slot.roomsPickedUp += 1;
+  }
+}
+
 function seedRooms(): void {
   if (rooms.size > 0) return;
   const base: Array<[string, string, boolean]> = [
@@ -141,6 +262,7 @@ function seedRooms(): void {
 export function mockOperaRequest<T>(path: string, options: OperaRequestOptions): T {
   seed();
   seedRooms();
+  seedBlocks();
 
   const method = options.method ?? 'GET';
   const query = options.query ?? {};
@@ -236,9 +358,114 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
     return { hotelId, roomId, ...updated } as T;
   }
 
+  // --- 단체 블록 ---------------------------------------------------------
+  if (method === 'GET' && /\/blk\/v1\/hotels\/[^/]+\/blocks$/.test(path)) {
+    let items = [...blocks.values()].filter((b) => b.hotelId === hotelId);
+
+    if (query.blockStatus) {
+      items = items.filter((b) => b.blockStatus === query.blockStatus);
+    }
+    if (query.startDate) {
+      items = items.filter((b) => b.endDate >= String(query.startDate));
+    }
+
+    const offset = Number(query.offset ?? 0);
+    const limit = Number(query.limit ?? 50);
+    items.sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+    return { blocks: items.slice(offset, offset + limit), totalResults: items.length } as T;
+  }
+
+  if (method === 'POST' && /\/blk\/v1\/hotels\/[^/]+\/blocks$/.test(path)) {
+    const startDate = String(body.startDate ?? dayOffset(7));
+    const endDate = String(body.endDate ?? dayOffset(8));
+
+    if (endDate <= startDate) {
+      throw new OperaApiError(400, { detail: 'INVALID_DATES' }, '종료일은 시작일보다 뒤여야 합니다.');
+    }
+
+    const code = String(body.blockCode ?? '').toUpperCase();
+    if ([...blocks.values()].some((b) => b.hotelId === hotelId && b.blockCode === code)) {
+      throw new OperaApiError(409, { detail: 'DUPLICATE_CODE' }, `이미 쓰고 있는 블록 코드입니다: ${code}`);
+    }
+
+    const allocations = (body.roomTypeAllocations ?? []) as Array<Record<string, unknown>>;
+    for (const slot of allocations) {
+      const roomType = String(slot.roomType ?? '');
+      if (!(roomType in RATES)) {
+        throw new OperaApiError(400, { detail: 'INVALID_ROOM_TYPE' }, `알 수 없는 객실 타입: ${roomType}`);
+      }
+    }
+
+    blockSequence += 1;
+    const created: MockBlock = {
+      blockId: `BLK-${blockSequence}`,
+      blockCode: code,
+      blockName: String(body.blockName ?? ''),
+      hotelId,
+      blockStatus: String(body.blockStatus ?? 'Tentative'),
+      startDate,
+      endDate,
+      cutoffDate: body.cutoffDate ? String(body.cutoffDate) : undefined,
+      currencyCode: 'KRW',
+      // 요청은 객실 타입별 수량만 주고, 일자별로 펼치는 것은 OPERA 의 몫이다.
+      roomTypeAllocations: stayDates(startDate, endDate).flatMap((date) =>
+        allocations.map((slot) => ({
+          date,
+          roomType: String(slot.roomType),
+          roomsBlocked: Number(slot.roomsBlocked ?? 0),
+          roomsPickedUp: 0,
+          ratePlanCode: slot.ratePlanCode ? String(slot.ratePlanCode) : undefined,
+          amount: RATES[String(slot.roomType)],
+        })),
+      ),
+    };
+
+    blocks.set(created.blockId, created);
+    return created as T;
+  }
+
+  const blockMatch = /\/blk\/v1\/hotels\/[^/]+\/blocks\/([^/]+)$/.exec(path);
+  if (blockMatch) {
+    const blockId = decodeURIComponent(blockMatch[1] ?? '');
+    const existing = blocks.get(blockId);
+    if (!existing) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `블록을 찾을 수 없습니다: ${blockId}`);
+    }
+
+    if (method === 'GET') return existing as T;
+
+    if (method === 'PATCH' || method === 'PUT') {
+      const nextStatus = body.blockStatus ? String(body.blockStatus) : existing.blockStatus;
+
+      // 이미 예약이 빠져나간 블록을 취소하면 그 예약들의 근거가 사라진다.
+      const pickedUp = existing.roomTypeAllocations.reduce((sum, a) => sum + a.roomsPickedUp, 0);
+      if (nextStatus === 'Cancelled' && pickedUp > 0) {
+        throw new OperaApiError(
+          400,
+          { detail: 'BLOCK_HAS_PICKUP' },
+          '이미 픽업된 예약이 있는 블록은 취소할 수 없습니다.',
+        );
+      }
+
+      const updated: MockBlock = {
+        ...existing,
+        blockStatus: nextStatus,
+        ...(body.blockName ? { blockName: String(body.blockName) } : {}),
+        ...(body.cutoffDate ? { cutoffDate: String(body.cutoffDate) } : {}),
+      };
+      blocks.set(blockId, updated);
+      return updated as T;
+    }
+  }
+
   // --- 예약 목록 ---------------------------------------------------------
   if (method === 'GET' && /\/reservations$/.test(path)) {
     let items = [...store.values()].filter((r) => r.hotelId === hotelId);
+
+    if (query.blockCode) {
+      items = items.filter((r) => r.roomStay.blockCode === String(query.blockCode));
+    }
 
     if (query.reservationStatus) {
       items = items.filter((r) => r.reservationStatus === query.reservationStatus);
@@ -283,6 +510,27 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
       );
     }
 
+    const blockCode = roomStay.blockCode ? String(roomStay.blockCode) : undefined;
+    let block: MockBlock | undefined;
+    if (blockCode) {
+      block = [...blocks.values()].find((b) => b.hotelId === hotelId && b.blockCode === blockCode);
+      if (!block) {
+        throw new OperaApiError(
+          400,
+          { detail: 'INVALID_BLOCK' },
+          `알 수 없는 블록 코드입니다: ${blockCode}`,
+        );
+      }
+      if (block.blockStatus === 'Cancelled') {
+        throw new OperaApiError(
+          400,
+          { detail: 'BLOCK_CANCELLED' },
+          '취소된 블록으로는 예약할 수 없습니다.',
+        );
+      }
+      assertPickupPossible(block, roomType, arrival, departure);
+    }
+
     sequence += 1;
     const created: MockReservation = {
       reservationId: `OPERA-${sequence}`,
@@ -300,6 +548,7 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
           amount: (RATES[roomType] ?? 0) * nights(arrival, departure),
           currencyCode: 'KRW',
         },
+        ...(blockCode ? { blockCode } : {}),
       },
       guest: {
         profileId: String(guest.profileId ?? `PRF-${sequence}`),
@@ -310,6 +559,7 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
     };
 
     store.set(created.reservationId, created);
+    if (block) applyPickup(block, roomType, arrival, departure);
     return created as T;
   }
 
@@ -372,5 +622,7 @@ function addDays(date: string, days: number): string {
 export function resetMockStore(): void {
   store.clear();
   rooms.clear();
+  blocks.clear();
   sequence = SEQUENCE_START;
+  blockSequence = BLOCK_SEQUENCE_START;
 }

@@ -23,6 +23,7 @@ export interface OperaReservationPayload {
     adultCount?: number;
     childCount?: number;
     total?: { amount?: number; currencyCode?: string };
+    blockCode?: string;
   };
   guest?: {
     profileId?: string;
@@ -52,6 +53,7 @@ export function toReservation(raw: OperaReservationPayload): Reservation {
     children: raw.roomStay?.childCount,
     totalAmount: raw.roomStay?.total?.amount,
     currency: raw.roomStay?.total?.currencyCode,
+    blockCode: raw.roomStay?.blockCode,
     guest: raw.guest && {
       profileId: raw.guest.profileId,
       firstName: raw.guest.givenName,
@@ -69,8 +71,10 @@ export function toOperaRoomStay(input: {
   ratePlanCode?: string;
   adults?: number;
   children?: number;
+  blockCode?: string;
 }): Record<string, unknown> {
   return {
+    ...(input.blockCode ? { blockCode: input.blockCode } : {}),
     ...(input.arrivalDate ? { arrivalDate: input.arrivalDate } : {}),
     ...(input.departureDate ? { departureDate: input.departureDate } : {}),
     ...(input.roomTypeCode ? { roomType: input.roomTypeCode } : {}),
