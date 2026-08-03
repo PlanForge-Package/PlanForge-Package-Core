@@ -77,6 +77,21 @@ src/
 
 `NODE_ENV=production` 으로 기동하면 위 값이 비어 있을 때 즉시 실패합니다.
 
+## 배포
+
+`Dockerfile` 로 이미지를 만듭니다. 멀티스테이지에 비-root(`node`) 실행이며,
+`/health` 를 보는 HEALTHCHECK 가 들어 있습니다.
+
+```bash
+docker build -t planforge-core .
+```
+
+**Core 는 외부에 노출하지 않습니다.** OHIP 클라이언트 시크릿과 OPERA 통합 계정을
+들고 있어, 내부 네트워크에서 BE 만 호출하도록 두어야 합니다. 전체 스택 구성은
+BE 리포의 `deploy/docker-compose.yml` 을 참고하세요.
+
+이미지는 태그를 밀 때만 GHCR 에 발행됩니다.
+
 ## 스크립트
 
 | 명령 | 설명 |
