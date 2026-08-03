@@ -6,10 +6,7 @@ import {
   type OperaBlockPayload,
 } from '../opera/block-mapper.js';
 import { operaRequest } from '../opera/client.js';
-import {
-  toReservation,
-  type OperaReservationListPayload,
-} from '../opera/reservation-mapper.js';
+import { toReservation, type OperaReservationListPayload } from '../opera/reservation-mapper.js';
 import {
   Block,
   BlockIdParams,

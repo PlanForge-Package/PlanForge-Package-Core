@@ -12,7 +12,12 @@ interface BlockShape {
   blockId: string;
   blockCode: string;
   blockStatus: string;
-  roomTypeAllocations: Array<{ date: string; roomType: string; roomsBlocked: number; roomsPickedUp: number }>;
+  roomTypeAllocations: Array<{
+    date: string;
+    roomType: string;
+    roomsBlocked: number;
+    roomsPickedUp: number;
+  }>;
 }
 
 const BLOCKS = '/blk/v1/hotels/SAND01/blocks';
@@ -50,9 +55,9 @@ describe('모의 OPERA — 블록 생성', () => {
   });
 
   it('알 수 없는 객실 타입은 거절한다', () => {
-    expect(() => createBlock({ roomTypeAllocations: [{ roomType: 'NOPE', roomsBlocked: 1 }] })).toThrow(
-      OperaApiError,
-    );
+    expect(() =>
+      createBlock({ roomTypeAllocations: [{ roomType: 'NOPE', roomsBlocked: 1 }] }),
+    ).toThrow(OperaApiError);
   });
 
   // 코드가 겹치면 예약이 어느 블록에서 빠지는지 판단할 수 없다.
@@ -207,7 +212,11 @@ describe('모의 OPERA — 블록 수정', () => {
     const created = createBlock({ blockCode: 'UPD' });
     const updated = mockOperaRequest<BlockShape & { cutoffDate?: string }>(
       `${BLOCKS}/${created.blockId}`,
-      { method: 'PATCH', hotelId: 'SAND01', body: { blockStatus: 'Definite', cutoffDate: day(20) } },
+      {
+        method: 'PATCH',
+        hotelId: 'SAND01',
+        body: { blockStatus: 'Definite', cutoffDate: day(20) },
+      },
     );
     expect(updated.blockStatus).toBe('Definite');
     expect(updated.cutoffDate).toBe(day(20));

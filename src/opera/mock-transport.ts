@@ -381,19 +381,31 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
     const endDate = String(body.endDate ?? dayOffset(8));
 
     if (endDate <= startDate) {
-      throw new OperaApiError(400, { detail: 'INVALID_DATES' }, '종료일은 시작일보다 뒤여야 합니다.');
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_DATES' },
+        '종료일은 시작일보다 뒤여야 합니다.',
+      );
     }
 
     const code = String(body.blockCode ?? '').toUpperCase();
     if ([...blocks.values()].some((b) => b.hotelId === hotelId && b.blockCode === code)) {
-      throw new OperaApiError(409, { detail: 'DUPLICATE_CODE' }, `이미 쓰고 있는 블록 코드입니다: ${code}`);
+      throw new OperaApiError(
+        409,
+        { detail: 'DUPLICATE_CODE' },
+        `이미 쓰고 있는 블록 코드입니다: ${code}`,
+      );
     }
 
     const allocations = (body.roomTypeAllocations ?? []) as Array<Record<string, unknown>>;
     for (const slot of allocations) {
       const roomType = String(slot.roomType ?? '');
       if (!(roomType in RATES)) {
-        throw new OperaApiError(400, { detail: 'INVALID_ROOM_TYPE' }, `알 수 없는 객실 타입: ${roomType}`);
+        throw new OperaApiError(
+          400,
+          { detail: 'INVALID_ROOM_TYPE' },
+          `알 수 없는 객실 타입: ${roomType}`,
+        );
       }
     }
 
