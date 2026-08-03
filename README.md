@@ -1,123 +1,92 @@
-# @figam-dev-variable-tools/design-kit
+# PlanForge-Package-Core
 
-[![npm version](https://img.shields.io/npm/v/@figam-dev-variable-tools/design-kit.svg)](https://www.npmjs.com/package/@figam-dev-variable-tools/design-kit)
-[![npm downloads](https://img.shields.io/npm/dm/@figam-dev-variable-tools/design-kit.svg)](https://www.npmjs.com/package/@figam-dev-variable-tools/design-kit)
-[![license](https://img.shields.io/npm/l/@figam-dev-variable-tools/design-kit.svg)](./LICENSE)
-[![types](https://img.shields.io/npm/types/@figam-dev-variable-tools/design-kit.svg)](https://www.npmjs.com/package/@figam-dev-variable-tools/design-kit)
-[![react](https://img.shields.io/badge/react->=18-149eca.svg)](https://react.dev)
+Oracle OPERA(OHIP) 기반 호텔 관리 플랫폼 **PlanForge** 의 **Core API Server** 입니다.
+Oracle Hospitality Integration Platform 과의 연동을 전담하는 게이트웨이로,
+인증·토큰 캐시·응답 정규화·오류 변환을 담당합니다.
 
-Figma Dev Tools 디자인 시스템의 React 컴포넌트 키트입니다. Figma 플러그인과 Storybook이 같은 토큰(`tokens/*.json`)으로 만든 91개 컴포넌트를 npm으로 바로 가져다 씁니다.
+## 플랫폼 구성
 
-- **npm**: https://www.npmjs.com/package/@figam-dev-variable-tools/design-kit
-- **문서(컴포넌트·변수 조합)**: https://figam-dev-variable-tools.github.io/Design-System-Hub-Tools/docs/
+| 리포지토리 | 역할 | 스택 |
+| --- | --- | --- |
+| [PlanForge-Package-FE](https://github.com/PlanForge-Package/PlanForge-Package-FE) | 운영자·프론트데스크 웹 UI | Next.js 15 · TypeScript · Tailwind CSS 4 |
+| [PlanForge-Package-BE](https://github.com/PlanForge-Package/PlanForge-Package-BE) | 업무 로직 · 자체 데이터베이스 | NestJS · Prisma · PostgreSQL |
+| [PlanForge-Package-Core](https://github.com/PlanForge-Package/PlanForge-Package-Core) | Oracle OPERA(OHIP) 연동 API 서버 | Fastify · OpenAPI |
 
-특징:
+호출 경로: `FE → BE → Core → OPERA Cloud (OHIP)`
 
-- CSS 변수(`--ds-*`) 기반 — 프리셋(bootstrap / tailwind / toss) 전환을 `data-theme`으로
-- 런타임 의존 없음 — styled-components / emotion 불필요, react만 peer
-- Figma ⇄ Storybook 100% 동기화
+Core 는 외부에 직접 노출하지 않고 BE 만 호출하는 것을 전제로 합니다.
+호출자는 `x-api-key` 헤더에 `SERVICE_API_KEY` 를 실어야 합니다.
 
-## 지원 패키지 매니저
+## 요구 사항
 
-[![npm](https://img.shields.io/badge/npm-CB3837?logo=npm&logoColor=white)](https://www.npmjs.com/package/@figam-dev-variable-tools/design-kit)
-[![pnpm](https://img.shields.io/badge/pnpm-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
-[![yarn](https://img.shields.io/badge/yarn-2C8EBB?logo=yarn&logoColor=white)](https://yarnpkg.com)
+- Node.js 20.11 이상
+- pnpm 9
+- OHIP 애플리케이션 키 및 OPERA Cloud 통합 계정
 
-## 설치
-
-npm:
+## 시작하기
 
 ```bash
-npm install @figam-dev-variable-tools/design-kit react react-dom
+pnpm install
+cp .env.example .env
+pnpm dev
 ```
 
-pnpm:
+- API: `http://localhost:3002`
+- Swagger UI: `http://localhost:3002/docs`
+- 헬스체크: `GET http://localhost:3002/health` (인증 불필요)
 
-```bash
-pnpm add @figam-dev-variable-tools/design-kit react react-dom
+## 제공 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `GET` | `/health` | 서비스 상태 |
+| `GET` | `/v1/availability` | 기간별 객실 가용 현황 |
+| `GET` | `/v1/reservations` | 예약 목록 |
+| `GET` | `/v1/reservations/:reservationId` | 예약 단건 |
+
+스키마는 TypeBox 로 선언하며, 런타임 검증과 OpenAPI 문서가 같은 정의에서 나옵니다.
+`pnpm openapi:export` 로 `openapi/planforge-core.json` 을 생성해 BE 클라이언트 생성에 씁니다.
+
+## 구조
+
+```
+src/
+  config/env.ts        환경변수 로딩 및 운영 필수값 검증
+  opera/
+    token-store.ts     OHIP OAuth2 토큰 캐시 (동시 갱신 병합, 401 시 무효화)
+    client.ts          OHIP REST 호출 래퍼 (401 1회 재시도)
+    errors.ts          OperaApiError / OperaAuthError
+  plugins/auth.ts      내부 서비스 API 키 인증
+  routes/              가용 현황 · 예약 라우트
+  schemas/             TypeBox 요청/응답 스키마
+  scripts/             OpenAPI 문서 내보내기
 ```
 
-yarn:
+## 환경 변수
 
-```bash
-yarn add @figam-dev-variable-tools/design-kit react react-dom
-```
+| 이름 | 설명 |
+| --- | --- |
+| `PORT` | 서버 포트 (기본 `3002`) |
+| `SERVICE_API_KEY` | 내부 호출자 인증 키. 비우면 개발용으로 인증 생략 |
+| `CORS_ORIGIN` | 허용 오리진 (쉼표 구분) |
+| `OHIP_BASE_URL` | OHIP 게이트웨이 주소 |
+| `OHIP_APP_KEY` | OHIP 애플리케이션 키 (`x-app-key`) |
+| `OHIP_CLIENT_ID` / `OHIP_CLIENT_SECRET` | OAuth2 클라이언트 자격 증명 |
+| `OHIP_USERNAME` / `OHIP_PASSWORD` | OPERA Cloud 통합 사용자 |
+| `OHIP_HOTEL_ID` | 기본 호텔 코드 |
 
-## 사용
+`NODE_ENV=production` 으로 기동하면 위 값이 비어 있을 때 즉시 실패합니다.
 
-`tokens.css`(디자인 토큰)와 `styles.css`(컴포넌트 스타일)를 앱 진입점에서 한 번만 import 하세요.
+## 스크립트
 
-```tsx
-import '@figam-dev-variable-tools/design-kit/tokens.css'
-import '@figam-dev-variable-tools/design-kit/styles.css'
-import { Button, Badge, TextField, Alert } from '@figam-dev-variable-tools/design-kit'
-
-export function App() {
-  return (
-    <>
-      <Button variant="primary" appearance="solid" size="md" label="시작하기" />
-      <Button variant="primary" appearance="outline" size="md" label="더보기" />
-      <Badge variant="success" appearance="soft" size="md" label="완료" />
-      <Alert variant="warning" label="저장 공간이 부족해요." showIcon />
-      <TextField label="이메일" placeholder="name@example.com" size="md" />
-    </>
-  )
-}
-```
-
-## 프리셋(테마) 전환
-
-`tokens.css`는 기본값으로 `:root`에 toss 프리셋을 깔고, `data-theme`으로 전환할 수 있게 세 프리셋을 모두 포함합니다.
-
-```html
-<html data-theme="toss">  <!-- bootstrap | tailwind | toss -->
-```
-
-특정 프리셋 하나만 쓰려면 개별 파일을 import 하세요(이 경우 `:root`에 바로 적용됩니다):
-
-```tsx
-import '@figam-dev-variable-tools/design-kit/tokens/toss.css'
-```
-
-## 테마 커스터마이즈 — 선언된 변수만 덮어쓰면 끝
-
-모든 컴포넌트는 `--ds-*` 디자인 변수 위에 만들어져 있습니다. 그래서 서비스 브랜드에 맞추려면 컴포넌트 CSS를 건드릴 필요 없이 이미 선언된 변수 몇 개만 오버라이드하면 Button, Badge, Alert, 입력, 링크까지 전부 한 번에 따라옵니다.
-
-```css
-/* app.css — tokens.css 다음에 로드 */
-:root {
-  --ds-color-primary: #ff5a5f;      /* 주요 버튼·강조·포커스링 전부 이 색으로 */
-  --ds-color-success: #12b886;
-  --ds-radius-md: 12px;             /* 버튼·입력 모서리 */
-  --ds-font-family: 'Pretendard', system-ui, sans-serif;
-}
-```
-
-즉, 프론트엔드에서는 이미 선언된 변수(토큰)와 컴포넌트 변형(prop)만 조합하면 됩니다 — 색·타이포·간격·모서리는 `--ds-*` 변수로, 컴포넌트 형태는 `variant`·`appearance`·`size` 같은 선언된 prop 조합으로.
-
-```tsx
-// 선언된 변형(prop)만 조합 — 새 CSS 작성 불필요
-<Button variant="primary"   appearance="solid"   size="lg" label="결제하기" />
-<Button variant="secondary" appearance="outline" size="md" label="취소" />
-<Badge  variant="warning"   appearance="soft"    size="sm" label="대기중" />
-```
-
-사용 가능한 변수 전체 목록은 배포된 `tokens.css`에, 컴포넌트별 변형 조합은 [문서](https://figam-dev-variable-tools.github.io/Design-System-Hub-Tools/docs/)의 "변수 조합" 탭에서 실시간으로 확인할 수 있습니다.
-
-## 컴포넌트
-
-Button, Badge, Alert, TextField, Card, Checkbox, Toggle, Chip, Toast, Select, Modal, Dialog, Tabs, Avatar, Tooltip, Table, Calendar, DatePicker, Carousel, Accordion, Drawer, Rating, Skeleton, Kbd, Callout 외 다수(한국형 KR 컴포넌트 포함). 전체 목록과 실시간 예제는 [컴포넌트 문서](https://figam-dev-variable-tools.github.io/Design-System-Hub-Tools/docs/)를 참고하세요.
-
-차트(Chart)는 chart.js 의존이 있어 이 키트에는 포함하지 않습니다.
-
-## 타입
-
-모든 컴포넌트의 prop 타입이 함께 배포됩니다(`XProps`).
-
-```tsx
-import type { ButtonProps, TextFieldProps } from '@figam-dev-variable-tools/design-kit'
-```
+| 명령 | 설명 |
+| --- | --- |
+| `pnpm dev` | 개발 서버 (watch) |
+| `pnpm build` / `pnpm start` | 빌드 / 프로덕션 실행 |
+| `pnpm test` | Vitest |
+| `pnpm openapi:export` | OpenAPI 문서 생성 |
+| `pnpm lint` / `pnpm typecheck` | 검사 |
 
 ## 라이선스
 
-MIT
+UNLICENSED — 사내 전용.

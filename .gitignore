@@ -1,8 +1,26 @@
-node_modules
-*.log
-.DS_Store
-npm-debug.log*
-.npmrc
+node_modules/
+dist/
+coverage/
+
+# env
 .env
-.env.*
-*.pem
+.env.local
+.env.*.local
+
+# 생성물
+openapi/*.json
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# misc
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+
+# editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
