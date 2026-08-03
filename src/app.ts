@@ -12,6 +12,7 @@ import { availabilityRoutes } from './routes/availability.js';
 import { blockRoutes } from './routes/blocks.js';
 import { healthRoutes } from './routes/health.js';
 import { housekeepingRoutes } from './routes/housekeeping.js';
+import { nightAuditRoutes } from './routes/night-audit.js';
 import { rateRoutes } from './routes/rates.js';
 import { reservationRoutes } from './routes/reservations.js';
 
@@ -69,6 +70,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(availabilityRoutes);
   await app.register(blockRoutes);
   await app.register(housekeepingRoutes);
+  await app.register(nightAuditRoutes);
   await app.register(rateRoutes);
   await app.register(reservationRoutes);
 

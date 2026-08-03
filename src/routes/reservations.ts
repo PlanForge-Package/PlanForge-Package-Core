@@ -8,6 +8,7 @@ import {
   type OperaReservationPayload,
 } from '../opera/reservation-mapper.js';
 import { ErrorResponse } from '../schemas/common.js';
+import { NoShowBody } from '../schemas/night-audit.js';
 import {
   CancelReservationBody,
   CreateReservationBody,
@@ -138,6 +139,38 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
           method: 'PATCH',
           hotelId: hotel,
           body: { roomStay: toOperaRoomStay(request.body) },
+        },
+      );
+
+      return toReservation(raw);
+    },
+  );
+
+  app.post(
+    '/v1/reservations/:reservationId/no-show',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '노쇼 처리 — 도착일이 지나도록 오지 않은 예약',
+        params: ReservationIdParams,
+        body: NoShowBody,
+        response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
+      },
+    },
+    async (request) => {
+      const hotel = env.ohip.defaultHotelId;
+
+      // 노쇼도 취소와 마찬가지로 상태 전이다. 삭제하면 노쇼 수수료를 청구할
+      // 근거와 다음 시즌 예측에 쓸 이력이 함께 사라진다.
+      const raw = await operaRequest<OperaReservationPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}`,
+        {
+          method: 'PATCH',
+          hotelId: hotel,
+          body: {
+            reservationStatus: 'NoShow',
+            ...(request.body.reason ? { reason: request.body.reason } : {}),
+          },
         },
       );
 

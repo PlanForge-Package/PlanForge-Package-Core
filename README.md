@@ -52,8 +52,14 @@ pnpm dev
 | `GET` | `/v1/blocks/:blockId/reservations` | 룸리스트 |
 | `POST` | `/v1/blocks` | 블록 생성 |
 | `PATCH` | `/v1/blocks/:blockId` | 블록 수정 |
+| `POST` | `/v1/reservations/:reservationId/no-show` | 노쇼 처리 |
 | `GET` | `/v1/housekeeping/rooms` | 객실 상태 |
 | `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | 객실 상태 변경 |
+| `GET` | `/v1/business-date` | 호텔 영업일 |
+
+영업일은 달력 날짜와 다릅니다. 야간 감사를 돌리기 전까지는 자정을 넘겨도 어제가
+영업일로 남고, 매출과 점유율이 어느 날짜에 붙는지가 그 값으로 정해집니다. 마감을
+언제 돌렸는지는 OPERA 만 알기 때문에 계산하지 않고 그대로 읽습니다.
 
 ### 오류 변환
 

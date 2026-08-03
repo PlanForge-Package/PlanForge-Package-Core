@@ -147,6 +147,14 @@ interface MockBlock {
 
 const blocks = new Map<string, MockBlock>();
 
+/**
+ * 호텔별 영업일.
+ *
+ * 모의 모드에서는 야간 감사가 돌지 않으므로 달력 날짜와 같게 둔다. 실제로는
+ * 마감 전까지 어제로 남아 있고, 그 차이가 매출이 붙는 날짜를 정한다.
+ */
+const businessDates = new Map<string, string>();
+
 /** 블록 번호도 예약과 마찬가지로 시드와 겹치지 않는 지점에서 시작한다. */
 const BLOCK_SEQUENCE_START = 500;
 let blockSequence = BLOCK_SEQUENCE_START;
@@ -259,6 +267,29 @@ function seedRooms(): void {
   }
 }
 
+/** 노쇼로 바꿀 수 있는 출발 상태. 이미 들어온 손님을 안 왔다고 할 수는 없다. */
+const NO_SHOW_FROM = ['Reserved', 'Confirmed', 'Waitlisted'];
+
+function assertNoShowAllowed(reservation: MockReservation, businessDate: string): void {
+  if (!NO_SHOW_FROM.includes(reservation.reservationStatus)) {
+    throw new OperaApiError(
+      400,
+      { detail: 'INVALID_STATUS_TRANSITION' },
+      `현재 상태(${reservation.reservationStatus})에서는 노쇼 처리할 수 없습니다.`,
+    );
+  }
+
+  // 아직 도착일이 오지 않은 예약을 노쇼로 찍으면 판매 가능한 재고가 사라지고
+  // 노쇼 수수료 근거도 없다. 영업일이 도착일에 닿아야 판단할 수 있다.
+  if (reservation.roomStay.arrivalDate > businessDate) {
+    throw new OperaApiError(
+      400,
+      { detail: 'ARRIVAL_NOT_DUE' },
+      `도착일(${reservation.roomStay.arrivalDate})이 지나지 않아 노쇼로 처리할 수 없습니다.`,
+    );
+  }
+}
+
 export function mockOperaRequest<T>(path: string, options: OperaRequestOptions): T {
   seed();
   seedRooms();
@@ -356,6 +387,15 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
     const updated = { ...room, roomStatus: next };
     rooms.set(roomId, updated);
     return { hotelId, roomId, ...updated } as T;
+  }
+
+  // --- 영업일 ------------------------------------------------------------
+  if (method === 'GET' && /\/lov\/v1\/hotels\/[^/]+\/businessDate$/.test(path)) {
+    return {
+      hotelId,
+      businessDate: businessDates.get(hotelId) ?? dayOffset(0),
+      currentDate: dayOffset(0),
+    } as T;
   }
 
   // --- 단체 블록 ---------------------------------------------------------
@@ -587,9 +627,15 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
     if (method === 'GET') return existing as T;
 
     if (method === 'PUT' || method === 'PATCH') {
+      const nextStatus = body.reservationStatus ? String(body.reservationStatus) : undefined;
+      if (nextStatus === 'NoShow') {
+        assertNoShowAllowed(existing, businessDates.get(hotelId) ?? dayOffset(0));
+      }
+
       const roomStay = (body.roomStay ?? {}) as Record<string, unknown>;
       const updated: MockReservation = {
         ...existing,
+        ...(nextStatus ? { reservationStatus: nextStatus } : {}),
         roomStay: {
           ...existing.roomStay,
           ...(roomStay.arrivalDate ? { arrivalDate: String(roomStay.arrivalDate) } : {}),
@@ -635,6 +681,7 @@ export function resetMockStore(): void {
   store.clear();
   rooms.clear();
   blocks.clear();
+  businessDates.clear();
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
 }
