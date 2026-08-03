@@ -56,6 +56,8 @@ pnpm dev
 | `GET` | `/v1/housekeeping/rooms` | 객실 상태 |
 | `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | 객실 상태 변경 |
 | `GET` | `/v1/business-date` | 호텔 영업일 |
+| `GET` | `/v1/profiles/:profileId` | 게스트 프로필 단건 |
+| `POST` | `/v1/profiles/:profileId/merge` | 중복 프로필 병합 |
 
 영업일은 달력 날짜와 다릅니다. 야간 감사를 돌리기 전까지는 자정을 넘겨도 어제가
 영업일로 남고, 매출과 점유율이 어느 날짜에 붙는지가 그 값으로 정해집니다. 마감을
@@ -102,6 +104,15 @@ src/
 | `OHIP_HOTEL_ID` | 기본 호텔 코드 |
 
 `NODE_ENV=production` 으로 기동하면 위 값이 비어 있을 때 즉시 실패합니다.
+
+## 모의 모드 (`OHIP_MODE=mock`)
+
+전송 계층만 바꿉니다. 응답 매핑은 live 와 똑같이 태우므로 실제 연동으로 옮길 때
+달라지는 것은 `mock-transport.ts` 하나입니다.
+
+모의 저장소는 **프로세스 수명만큼만** 삽니다. Core 를 재시작하면 그동안 발급한 예약·
+프로필·블록을 잊는 반면 BE 의 데이터베이스는 남아 있어, 로컬 개발 중에는 둘이 어긋날 수
+있습니다. 어긋나면 BE 에서 `pnpm prisma:seed` 로 맞춰 주세요.
 
 ## 배포
 

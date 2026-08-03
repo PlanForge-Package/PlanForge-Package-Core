@@ -94,6 +94,7 @@ function seed(): void {
 
   for (const reservation of base) {
     store.set(reservation.reservationId, reservation);
+    rememberProfile(reservation.guest);
   }
 }
 
@@ -154,6 +155,32 @@ const blocks = new Map<string, MockBlock>();
  * 마감 전까지 어제로 남아 있고, 그 차이가 매출이 붙는 날짜를 정한다.
  */
 const businessDates = new Map<string, string>();
+
+interface MockProfile {
+  profileId: string;
+  givenName?: string;
+  surname?: string;
+  email?: string;
+  mergedIntoId?: string;
+}
+
+/**
+ * 모의 프로필 저장소.
+ *
+ * 예약을 만들 때 함께 채운다. 병합을 검증하려면 예약과 별개로 프로필이 존재해야
+ * 하기 때문이다.
+ */
+const profiles = new Map<string, MockProfile>();
+
+function rememberProfile(guest: MockReservation['guest']): void {
+  if (!guest.profileId || profiles.has(guest.profileId)) return;
+  profiles.set(guest.profileId, {
+    profileId: guest.profileId,
+    givenName: guest.givenName,
+    surname: guest.surname,
+    email: guest.email,
+  });
+}
 
 /** 블록 번호도 예약과 마찬가지로 시드와 겹치지 않는 지점에서 시작한다. */
 const BLOCK_SEQUENCE_START = 500;
@@ -290,7 +317,18 @@ function assertNoShowAllowed(reservation: MockReservation, businessDate: string)
   }
 }
 
+/**
+ * 모의 응답은 항상 복사본이다.
+ *
+ * 저장된 객체를 그대로 돌려주면 호출자가 손대는 순간 저장소가 조용히 바뀌고,
+ * 뒤에 일어난 변경이 앞서 받은 응답에도 소급 반영된다. 실제 HTTP 응답은 그런
+ * 식으로 움직이지 않으므로 여기서도 끊어 둔다.
+ */
 export function mockOperaRequest<T>(path: string, options: OperaRequestOptions): T {
+  return structuredClone(handleMockRequest<T>(path, options));
+}
+
+function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
   seed();
   seedRooms();
   seedBlocks();
@@ -396,6 +434,77 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
       businessDate: businessDates.get(hotelId) ?? dayOffset(0),
       currentDate: dayOffset(0),
     } as T;
+  }
+
+  // --- 프로필 ------------------------------------------------------------
+  const profileMergeMatch = /\/crm\/v1\/profiles\/([^/]+)\/merge$/.exec(path);
+  if (profileMergeMatch && method === 'POST') {
+    const sourceId = decodeURIComponent(profileMergeMatch[1] ?? '');
+    const targetId = String(body.targetProfileId ?? '');
+
+    const source = profiles.get(sourceId);
+    const target = profiles.get(targetId);
+    if (!source) {
+      throw new OperaApiError(
+        404,
+        { detail: 'NOT_FOUND' },
+        `프로필을 찾을 수 없습니다: ${sourceId}`,
+      );
+    }
+    if (!target) {
+      throw new OperaApiError(
+        404,
+        { detail: 'NOT_FOUND' },
+        `프로필을 찾을 수 없습니다: ${targetId}`,
+      );
+    }
+    if (sourceId === targetId) {
+      throw new OperaApiError(
+        400,
+        { detail: 'SAME_PROFILE' },
+        '같은 프로필끼리는 병합할 수 없습니다.',
+      );
+    }
+    if (source.mergedIntoId || target.mergedIntoId) {
+      throw new OperaApiError(
+        400,
+        { detail: 'ALREADY_MERGED' },
+        '이미 병합된 프로필이 포함되어 있습니다.',
+      );
+    }
+
+    // 예약의 프로필을 정본으로 옮긴다. 원본은 지우지 않는다 — 지우면 예약의
+    // 게스트가 사라지고, 남겨 두면 어느 쪽이 정본인지 알 수 있다.
+    for (const reservation of store.values()) {
+      if (reservation.guest.profileId === sourceId) {
+        reservation.guest = { ...reservation.guest, profileId: targetId };
+      }
+    }
+
+    const merged: MockProfile = {
+      ...target,
+      givenName: target.givenName ?? source.givenName,
+      surname: target.surname ?? source.surname,
+      email: target.email ?? source.email,
+    };
+    profiles.set(targetId, merged);
+    profiles.set(sourceId, { ...source, mergedIntoId: targetId });
+
+    return merged as T;
+  }
+
+  const profileMatch = /\/crm\/v1\/profiles\/([^/]+)$/.exec(path);
+  if (profileMatch && method === 'GET') {
+    const profileId = decodeURIComponent(profileMatch[1] ?? '');
+    const profile = profiles.get(profileId);
+    if (!profile) {
+      throw new OperaApiError(
+        404,
+        { detail: 'NOT_FOUND' },
+        `프로필을 찾을 수 없습니다: ${profileId}`,
+      );
+    }
+    return profile as T;
   }
 
   // --- 단체 블록 ---------------------------------------------------------
@@ -583,6 +692,23 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
       assertPickupPossible(block, roomType, arrival, departure);
     }
 
+    /*
+     * 넘어온 프로필 ID 는 그대로 존중한다.
+     *
+     * 모의 저장소는 프로세스 수명만큼만 살아 있어 재시작 뒤에는 예전에 발급한
+     * 프로필을 모른다. 그때 새 번호를 지어내면 호출자가 지정한 것과 다른 프로필에
+     * 예약이 붙고, 재방문 손님마다 프로필이 하나씩 늘어난다.
+     */
+    const requestedProfileId = guest.profileId ? String(guest.profileId) : undefined;
+    const existingProfile = requestedProfileId ? profiles.get(requestedProfileId) : undefined;
+    if (existingProfile?.mergedIntoId) {
+      throw new OperaApiError(
+        400,
+        { detail: 'PROFILE_MERGED' },
+        `병합된 프로필로는 예약할 수 없습니다: ${existingProfile.profileId}`,
+      );
+    }
+
     sequence += 1;
     const created: MockReservation = {
       reservationId: `OPERA-${sequence}`,
@@ -602,15 +728,29 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
         },
         ...(blockCode ? { blockCode } : {}),
       },
-      guest: {
-        profileId: String(guest.profileId ?? `PRF-${sequence}`),
-        givenName: String(guest.givenName ?? ''),
-        surname: String(guest.surname ?? ''),
-        email: guest.email ? String(guest.email) : undefined,
-      },
+      /*
+       * 기존 프로필로 예약하면 그 프로필의 이름을 쓴다.
+       *
+       * 보낸 이름으로 덮어쓰면 예약 한 건 때문에 손님 이름이 바뀐다. 프로필이
+       * 사람의 기록 원천이고, 예약은 거기에 붙는 것이지 그 반대가 아니다.
+       */
+      guest: existingProfile
+        ? {
+            profileId: existingProfile.profileId,
+            givenName: existingProfile.givenName ?? '',
+            surname: existingProfile.surname ?? '',
+            email: existingProfile.email,
+          }
+        : {
+            profileId: requestedProfileId ?? `PRF-${sequence}`,
+            givenName: String(guest.givenName ?? ''),
+            surname: String(guest.surname ?? ''),
+            email: guest.email ? String(guest.email) : undefined,
+          },
     };
 
     store.set(created.reservationId, created);
+    rememberProfile(created.guest);
     if (block) applyPickup(block, roomType, arrival, departure);
     return created as T;
   }
@@ -682,6 +822,7 @@ export function resetMockStore(): void {
   rooms.clear();
   blocks.clear();
   businessDates.clear();
+  profiles.clear();
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
 }
