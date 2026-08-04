@@ -20,6 +20,9 @@ import {
   ReservationIdParams,
   ReservationListQuery,
   ReservationListResponse,
+  ShareReservationBody,
+  ShareResponse,
+  UnshareBody,
   UpdateReservationBody,
 } from '../schemas/reservation.js';
 
@@ -224,6 +227,68 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
 
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/checkOut`,
+        { method: 'POST', hotelId: hotel, body: {} },
+      );
+
+      return toReservation(raw);
+    },
+  );
+
+  app.post(
+    '/v1/reservations/:reservationId/share',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '객실 공유 — 두 예약이 한 방을 쓰고 계산은 따로 합니다',
+        params: ReservationIdParams,
+        body: ShareReservationBody,
+        response: {
+          200: ShareResponse,
+          400: ErrorResponse,
+          404: ErrorResponse,
+          409: ErrorResponse,
+          502: ErrorResponse,
+        },
+      },
+    },
+    async (request) => {
+      const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
+
+      const raw = await operaRequest<{
+        shareGroupId?: string;
+        reservations?: OperaReservationPayload[];
+      }>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/share`,
+        {
+          method: 'POST',
+          hotelId: hotel,
+          body: { withReservationId: request.body.withReservationId },
+        },
+      );
+
+      return {
+        shareGroupId: raw.shareGroupId ?? '',
+        reservations: (raw.reservations ?? []).map(toReservation),
+      };
+    },
+  );
+
+  app.post(
+    '/v1/reservations/:reservationId/unshare',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '공유 해제 — 이 예약만 묶음에서 뺍니다',
+        params: ReservationIdParams,
+        body: UnshareBody,
+        response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
+      },
+    },
+    async (request) => {
+      const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
+
+      const raw = await operaRequest<OperaReservationPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/unshare`,
         { method: 'POST', hotelId: hotel, body: {} },
       );
 

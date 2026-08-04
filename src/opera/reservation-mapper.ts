@@ -20,6 +20,7 @@ export interface OperaReservationPayload {
     roomType?: string;
     ratePlanCode?: string;
     roomId?: string;
+    shareGroupId?: string;
     adultCount?: number;
     childCount?: number;
     total?: { amount?: number; currencyCode?: string };
@@ -55,6 +56,7 @@ export function toReservation(raw: OperaReservationPayload): Reservation {
     roomTypeCode: raw.roomStay?.roomType,
     ratePlanCode: raw.roomStay?.ratePlanCode,
     roomNumber: raw.roomStay?.roomId,
+    shareGroupId: raw.roomStay?.shareGroupId,
     adults: raw.roomStay?.adultCount,
     children: raw.roomStay?.childCount,
     totalAmount: raw.roomStay?.total?.amount,

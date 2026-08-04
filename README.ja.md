@@ -170,6 +170,8 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `POST` | `/v1/reservations/:reservationId/check-in` | チェックイン（客室割当を含む） |
 | `POST` | `/v1/reservations/:reservationId/check-out` | チェックアウト |
 | `POST` | `/v1/reservations/:reservationId/confirm-waitlist` | ウェイトリスト確定（在庫再確認） |
+| `POST` | `/v1/reservations/:reservationId/share` | 客室シェア — 2件の予約で1室 |
+| `POST` | `/v1/reservations/:reservationId/unshare` | シェア解除 |
 | `GET` `POST` | `/v1/reservations/:id/folios` | フォリオ照会・ウィンドウ開設 |
 | `POST` | `/v1/reservations/:id/folios/:window/postings` | 取引登録 |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 取引取消 |

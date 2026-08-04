@@ -31,6 +31,13 @@ export const Reservation = Type.Object({
   /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
   blockCode: Type.Optional(Type.String()),
   /**
+   * 객실을 함께 쓰는 예약들의 묶음.
+   *
+   * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 예약은 둘이지만 객실은
+   * 하나이므로 재고도 하나만 차지한다.
+   */
+  shareGroupId: Type.Optional(Type.String()),
+  /**
    * 예약이 들어온 경로.
    *
    * OPERA 는 세 축으로 나눈다. 셋을 하나로 합치면 "OTA 를 통해 들어온 법인 예약"
@@ -134,6 +141,21 @@ export const CheckOutBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
+export const ShareReservationBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+  /** 함께 묶을 상대 예약 */
+  withReservationId: Type.String({ minLength: 1 }),
+});
+
+export const ShareResponse = Type.Object({
+  shareGroupId: Type.String(),
+  reservations: Type.Array(Reservation),
+});
+
+export const UnshareBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
 /** 대기 확정. 확정 시점에 재고를 다시 확인하므로 몸체는 비어 있다. */
 export const ConfirmWaitlistBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
@@ -145,6 +167,8 @@ export type CancelReservationBody = Static<typeof CancelReservationBody>;
 export type CheckInBody = Static<typeof CheckInBody>;
 export type CheckOutBody = Static<typeof CheckOutBody>;
 export type ConfirmWaitlistBody = Static<typeof ConfirmWaitlistBody>;
+export type ShareReservationBody = Static<typeof ShareReservationBody>;
+export type ShareResponse = Static<typeof ShareResponse>;
 
 export type Reservation = Static<typeof Reservation>;
 export type ReservationListQuery = Static<typeof ReservationListQuery>;

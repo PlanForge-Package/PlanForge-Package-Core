@@ -28,6 +28,13 @@ interface MockReservation {
     total?: { amount: number; currencyCode: string };
     /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
     blockCode?: string;
+    /**
+     * 객실을 함께 쓰는 예약들의 묶음.
+     *
+     * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 예약은 둘이지만
+     * 객실은 하나이므로 재고도 하나만 차지한다.
+     */
+    shareGroupId?: string;
   };
   guest: { profileId: string; givenName: string; surname: string; email?: string };
   sourceOfBusiness: { sourceCode: string; marketCode: string; channelCode?: string };
@@ -198,6 +205,17 @@ let postingSequence = FOLIO_SEQUENCE_START;
 
 const OUTAGE_SEQUENCE_START = 700;
 let outageSequence = OUTAGE_SEQUENCE_START;
+
+/** 객실 공유 묶음 번호. */
+const SHARE_SEQUENCE_START = 900;
+let shareSequence = SHARE_SEQUENCE_START;
+
+/** 공유 표시만 떼어 낸 roomStay. 나머지는 그대로 둔다. */
+function dropShare(roomStay: MockReservation['roomStay']): MockReservation['roomStay'] {
+  const copy = { ...roomStay };
+  delete copy.shareGroupId;
+  return copy;
+}
 
 interface MockBlockAllocation {
   date: string;
@@ -463,14 +481,21 @@ function availableRooms(
   arrival: string,
   departure: string,
 ): number {
-  const sold = [...store.values()].filter(
+  /*
+   * 객실을 공유하는 예약은 하나로 센다.
+   *
+   * 예약은 둘이어도 객실은 하나다. 각각 세면 재고가 실제보다 빨리 소진되어
+   * 팔 수 있는 방을 팔지 못한다.
+   */
+  const occupying = [...store.values()].filter(
     (r) =>
       r.hotelId === hotelId &&
       r.roomStay.roomType === roomType &&
       !['Cancelled', 'NoShow', 'Waitlisted'].includes(r.reservationStatus) &&
       r.roomStay.arrivalDate < departure &&
       r.roomStay.departureDate > arrival,
-  ).length;
+  );
+  const sold = new Set(occupying.map((r) => r.roomStay.shareGroupId ?? r.reservationId)).size;
 
   const blocked = [...roomOutages.values()].filter(
     (outage) =>
@@ -1429,6 +1454,126 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return toFolioPayload(folio) as T;
   }
 
+  // --- 객실 공유 ----------------------------------------------------------
+  const shareMatch = /\/reservations\/([^/]+)\/share$/.exec(path);
+  if (shareMatch && method === 'POST') {
+    const id = decodeURIComponent(shareMatch[1] ?? '');
+    const first = store.get(id);
+    if (!first) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+
+    const withId = String(body.withReservationId ?? '');
+    const second = store.get(withId);
+    if (!second) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${withId}`);
+    }
+    if (first.reservationId === second.reservationId) {
+      throw new OperaApiError(
+        400,
+        { detail: 'SAME_RESERVATION' },
+        '같은 예약끼리는 공유할 수 없습니다.',
+      );
+    }
+
+    for (const r of [first, second]) {
+      if (['Cancelled', 'NoShow', 'CheckedOut'].includes(r.reservationStatus)) {
+        throw new OperaApiError(
+          400,
+          { detail: 'INVALID_STATUS' },
+          `현재 상태(${r.reservationStatus})의 예약은 공유할 수 없습니다.`,
+        );
+      }
+    }
+
+    // 날짜가 겹치지 않으면 한 방을 함께 쓸 수 없다.
+    const overlaps =
+      first.roomStay.arrivalDate < second.roomStay.departureDate &&
+      second.roomStay.arrivalDate < first.roomStay.departureDate;
+    if (!overlaps) {
+      throw new OperaApiError(
+        400,
+        { detail: 'NO_OVERLAP' },
+        '투숙 기간이 겹치지 않아 객실을 함께 쓸 수 없습니다.',
+      );
+    }
+
+    // 타입이 다르면 어느 방을 내줄지 정할 수 없다.
+    if (first.roomStay.roomType !== second.roomStay.roomType) {
+      throw new OperaApiError(
+        400,
+        { detail: 'ROOM_TYPE_MISMATCH' },
+        `객실 타입이 다릅니다: ${first.roomStay.roomType} / ${second.roomStay.roomType}`,
+      );
+    }
+
+    /*
+     * 이미 배정된 객실이 있으면 그 방으로 맞춘다.
+     *
+     * 둘이 서로 다른 방에 들어가 있으면 어느 쪽을 옮길지 우리가 정할 수 없다.
+     * 한쪽 배정을 먼저 풀고 다시 요청해야 한다.
+     */
+    const assigned = [first.roomStay.roomId, second.roomStay.roomId].filter(Boolean) as string[];
+    if (new Set(assigned).size > 1) {
+      throw new OperaApiError(
+        409,
+        { detail: 'ROOM_CONFLICT' },
+        '두 예약이 서로 다른 객실에 배정되어 있습니다. 한쪽 배정을 먼저 풀어 주세요.',
+      );
+    }
+    const sharedRoom = assigned[0];
+
+    const groupId =
+      first.roomStay.shareGroupId ?? second.roomStay.shareGroupId ?? `SHR-${(shareSequence += 1)}`;
+
+    for (const r of [first, second]) {
+      store.set(r.reservationId, {
+        ...r,
+        roomStay: {
+          ...r.roomStay,
+          shareGroupId: groupId,
+          ...(sharedRoom ? { roomId: sharedRoom } : {}),
+        },
+      });
+    }
+
+    return {
+      shareGroupId: groupId,
+      reservations: [first.reservationId, second.reservationId].map(
+        (rid) => store.get(rid) as MockReservation,
+      ),
+    } as T;
+  }
+
+  const unshareMatch = /\/reservations\/([^/]+)\/unshare$/.exec(path);
+  if (unshareMatch && method === 'POST') {
+    const id = decodeURIComponent(unshareMatch[1] ?? '');
+    const existing = store.get(id);
+    if (!existing) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+    const groupId = existing.roomStay.shareGroupId;
+    if (!groupId) {
+      throw new OperaApiError(400, { detail: 'NOT_SHARED' }, '공유 중인 예약이 아닙니다.');
+    }
+
+    store.set(id, { ...existing, roomStay: dropShare(existing.roomStay) });
+
+    /*
+     * 혼자 남은 예약의 묶음도 푼다.
+     *
+     * 그대로 두면 공유가 아닌데 공유 표시가 남아, 나중에 다른 예약을 붙일 때
+     * 어느 묶음인지 헷갈린다.
+     */
+    const remaining = [...store.values()].filter((r) => r.roomStay.shareGroupId === groupId);
+    if (remaining.length === 1) {
+      const only = remaining[0]!;
+      store.set(only.reservationId, { ...only, roomStay: dropShare(only.roomStay) });
+    }
+
+    return store.get(id) as T;
+  }
+
   // --- 대기 확정 ----------------------------------------------------------
   const confirmMatch = /\/reservations\/([^/]+)\/confirmWaitlist$/.exec(path);
   if (confirmMatch && method === 'POST') {
@@ -1508,13 +1653,22 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       existing.roomStay.departureDate,
     );
 
-    // 다른 손님이 들어 있는 방에 또 넣을 수는 없다.
+    /*
+     * 다른 손님이 들어 있는 방에 또 넣을 수는 없다.
+     *
+     * 객실을 함께 쓰기로 한 예약은 예외다 — 두 손님이 한 방을 쓰되 계산만
+     * 따로 하는 편성이 공유다.
+     */
     const takenBy = [...store.values()].find(
       (r) =>
         r.reservationId !== id &&
         r.hotelId === hotelId &&
         r.reservationStatus === 'InHouse' &&
-        r.roomStay.roomId === roomId,
+        r.roomStay.roomId === roomId &&
+        !(
+          existing.roomStay.shareGroupId !== undefined &&
+          r.roomStay.shareGroupId === existing.roomStay.shareGroupId
+        ),
     );
     if (takenBy) {
       throw new OperaApiError(
@@ -1650,6 +1804,7 @@ export function resetMockStore(): void {
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
   outageSequence = OUTAGE_SEQUENCE_START;
+  shareSequence = SHARE_SEQUENCE_START;
   folioSequence = FOLIO_SEQUENCE_START;
   postingSequence = FOLIO_SEQUENCE_START;
 }

@@ -169,6 +169,8 @@ pnpm dev
 | `POST` | `/v1/reservations/:reservationId/check-in` | 체크인 (객실 배정 포함) |
 | `POST` | `/v1/reservations/:reservationId/check-out` | 체크아웃 |
 | `POST` | `/v1/reservations/:reservationId/confirm-waitlist` | 대기 확정 (재고 재확인) |
+| `POST` | `/v1/reservations/:reservationId/share` | 객실 공유 — 두 예약이 한 방 |
+| `POST` | `/v1/reservations/:reservationId/unshare` | 공유 해제 |
 | `GET` `POST` | `/v1/reservations/:id/folios` | 폴리오 조회 · 창구 개설 |
 | `POST` | `/v1/reservations/:id/folios/:window/postings` | 거래 등록 |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 거래 취소 |
