@@ -179,6 +179,9 @@ pnpm dev
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 冲销账目 |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | 账窗间转移 |
 | `POST` | `/v1/reservations/:id/folios/:window/close` | 账单结账 |
+| `GET` | `/v1/reservations/:id/policies` | 取消条款与押金 —— 现在取消要付多少 |
+| `PUT` | `/v1/reservations/:id/guarantee` | 变更担保方式 |
+| `POST` | `/v1/reservations/:id/deposit` | 收取押金 —— 以付款记入账夹 |
 | `GET` | `/v1/blocks` | 团队房控列表 |
 | `GET` | `/v1/blocks/:blockId` | 单个房控 —— 按日期与房型的配额 |
 | `GET` | `/v1/blocks/:blockId/reservations` | 房单 |

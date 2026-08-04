@@ -185,6 +185,9 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 取引取消 |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | ウィンドウ間移管 |
 | `POST` | `/v1/reservations/:id/folios/:window/close` | フォリオ締め |
+| `GET` | `/v1/reservations/:id/policies` | キャンセル条件・デポジット — 今解約するといくらか |
+| `PUT` | `/v1/reservations/:id/guarantee` | 保証方式の変更 |
+| `POST` | `/v1/reservations/:id/deposit` | デポジット収納 — フォリオに入金として計上 |
 | `GET` | `/v1/blocks` | 団体ブロック一覧 |
 | `GET` | `/v1/blocks/:blockId` | ブロック単件 —— 日付・客室タイプ別の割当 |
 | `GET` | `/v1/blocks/:blockId/reservations` | ルーミングリスト |

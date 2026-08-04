@@ -184,6 +184,9 @@ pnpm dev
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 거래 취소 |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | 창구 간 이관 |
 | `POST` | `/v1/reservations/:id/folios/:window/close` | 폴리오 마감 |
+| `GET` | `/v1/reservations/:id/policies` | 취소 조건·보증금 — 취소 전에 물게 될 금액 |
+| `PUT` | `/v1/reservations/:id/guarantee` | 보증 방식 변경 |
+| `POST` | `/v1/reservations/:id/deposit` | 보증금 수납 — 폴리오에 결제로 올립니다 |
 | `GET` | `/v1/blocks` | 단체 블록 목록 |
 | `GET` | `/v1/blocks/:blockId` | 블록 단건 — 일자·객실 타입별 할당 |
 | `GET` | `/v1/blocks/:blockId/reservations` | 룸리스트 |

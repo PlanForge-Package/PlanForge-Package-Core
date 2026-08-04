@@ -38,6 +38,14 @@ export const Reservation = Type.Object({
    */
   shareGroupId: Type.Optional(Type.String()),
   /**
+   * 보증 방식 — SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP.
+   *
+   * 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다.
+   */
+  guaranteeCode: Type.Optional(Type.String()),
+  /** 취소하며 물린 위약금. 취소된 예약에만 있다. */
+  cancellationPenalty: Type.Optional(Type.Number()),
+  /**
    * 예약이 들어온 경로.
    *
    * OPERA 는 세 축으로 나눈다. 셋을 하나로 합치면 "OTA 를 통해 들어온 법인 예약"
@@ -104,6 +112,8 @@ export const CreateReservationBody = Type.Object({
   sourceCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   marketCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   channelCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  /** 보증 방식. 비우면 6PM — 아무 보증 없는 예약은 18시까지만 잡아 둔다. */
+  guaranteeCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   guest: Type.Object({
     /** 기존 OPERA 프로필이 있으면 넘긴다. 없으면 이름으로 새로 만든다. */
     profileId: Type.Optional(Type.String()),
@@ -111,6 +121,39 @@ export const CreateReservationBody = Type.Object({
     lastName: Type.String({ minLength: 1 }),
     email: Type.Optional(Type.String({ format: 'email' })),
   }),
+});
+
+/** 예약의 취소 조건과 보증금. 손님에게 알려 줄 값이라 취소 전에 먼저 본다. */
+export const ReservationPolicies = Type.Object({
+  reservationId: Type.String(),
+  guaranteeCode: Type.String(),
+  currency: Type.String(),
+  cancellation: Type.Object({
+    policyName: Type.String(),
+    /** 이 시각까지는 무료로 취소할 수 있다. */
+    freeUntil: Type.String(),
+    withinFreeWindow: Type.Boolean(),
+    penaltyAmount: Type.Number(),
+  }),
+  deposit: Type.Object({
+    requiredAmount: Type.Number(),
+    dueDate: Type.Optional(Type.String()),
+    paidAmount: Type.Number(),
+  }),
+});
+
+export const SetGuaranteeBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+  guaranteeCode: Type.String({ minLength: 1, maxLength: 20 }),
+});
+
+export const DepositBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+  amount: Type.Number({ exclusiveMinimum: 0 }),
+  description: Type.Optional(Type.String({ maxLength: 200 })),
+  transactionCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  /** 같은 보증금을 두 번 받지 않기 위한 전표 번호. */
+  reference: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
 });
 
 export const UpdateReservationBody = Type.Object({
@@ -169,6 +212,9 @@ export type CheckOutBody = Static<typeof CheckOutBody>;
 export type ConfirmWaitlistBody = Static<typeof ConfirmWaitlistBody>;
 export type ShareReservationBody = Static<typeof ShareReservationBody>;
 export type ShareResponse = Static<typeof ShareResponse>;
+export type ReservationPolicies = Static<typeof ReservationPolicies>;
+export type SetGuaranteeBody = Static<typeof SetGuaranteeBody>;
+export type DepositBody = Static<typeof DepositBody>;
 
 export type Reservation = Static<typeof Reservation>;
 export type ReservationListQuery = Static<typeof ReservationListQuery>;

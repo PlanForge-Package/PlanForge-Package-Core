@@ -187,6 +187,9 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | Void a transaction |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | Move between windows |
 | `POST` | `/v1/reservations/:id/folios/:window/close` | Close a folio |
+| `GET` | `/v1/reservations/:id/policies` | Cancellation terms and deposit — what it costs to cancel now |
+| `PUT` | `/v1/reservations/:id/guarantee` | Change the guarantee type |
+| `POST` | `/v1/reservations/:id/deposit` | Take a deposit — posted to the folio as a payment |
 | `GET` | `/v1/blocks` | Group block list |
 | `GET` | `/v1/blocks/:blockId` | Single block — allotment by date and room type |
 | `GET` | `/v1/blocks/:blockId/reservations` | Rooming list |

@@ -8,7 +8,8 @@ import {
   type OperaReservationListPayload,
   type OperaReservationPayload,
 } from '../opera/reservation-mapper.js';
-import { ErrorResponse } from '../schemas/common.js';
+import { Type } from '@sinclair/typebox';
+import { ErrorResponse, HotelIdQuery } from '../schemas/common.js';
 import { NoShowBody } from '../schemas/night-audit.js';
 import {
   CancelReservationBody,
@@ -20,11 +21,27 @@ import {
   ReservationIdParams,
   ReservationListQuery,
   ReservationListResponse,
+  ReservationPolicies,
+  SetGuaranteeBody,
   ShareReservationBody,
   ShareResponse,
   UnshareBody,
   UpdateReservationBody,
 } from '../schemas/reservation.js';
+
+/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+interface OperaPoliciesPayload {
+  reservationId?: string;
+  guaranteeCode?: string;
+  currencyCode?: string;
+  cancellation?: {
+    policyName?: string;
+    freeUntil?: string;
+    withinFreeWindow?: boolean;
+    penaltyAmount?: number;
+  };
+  deposit?: { requiredAmount?: number; dueDate?: string; paidAmount?: number };
+}
 
 /**
  * 예약은 OPERA 가 기록의 원천이다.
@@ -131,6 +148,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
           body: {
             roomStay: toOperaRoomStay(stay),
             ...(sourceOfBusiness ? { sourceOfBusiness } : {}),
+            ...(stay.guaranteeCode ? { guaranteeCode: stay.guaranteeCode } : {}),
             guest: {
               ...(guest.profileId ? { profileId: guest.profileId } : {}),
               givenName: guest.firstName,
@@ -166,6 +184,77 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
           hotelId: hotel,
           body: { roomStay: toOperaRoomStay(request.body) },
         },
+      );
+
+      return toReservation(raw);
+    },
+  );
+
+  /**
+   * 취소 조건과 보증금.
+   *
+   * 취소하기 전에 손님에게 알려야 하는 값이다. 물리고 나서 통보하면 그건 통보가
+   * 아니라 사후 정산이다.
+   */
+  app.get(
+    '/v1/reservations/:reservationId/policies',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '취소 조건·보증금 — 취소 전에 얼마를 물게 되는지',
+        params: ReservationIdParams,
+        querystring: Type.Object({ hotelId: HotelIdQuery }),
+        response: { 200: ReservationPolicies, 404: ErrorResponse, 502: ErrorResponse },
+      },
+    },
+    async (request) => {
+      const hotel = request.query.hotelId ?? env.ohip.defaultHotelId;
+
+      const raw = await operaRequest<OperaPoliciesPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(
+          request.params.reservationId,
+        )}/policies`,
+        { hotelId: hotel },
+      );
+
+      return {
+        reservationId: raw.reservationId ?? request.params.reservationId,
+        guaranteeCode: raw.guaranteeCode ?? 'SIXPM',
+        currency: raw.currencyCode ?? 'KRW',
+        cancellation: {
+          policyName: raw.cancellation?.policyName ?? '',
+          freeUntil: raw.cancellation?.freeUntil ?? '',
+          withinFreeWindow: Boolean(raw.cancellation?.withinFreeWindow),
+          penaltyAmount: raw.cancellation?.penaltyAmount ?? 0,
+        },
+        deposit: {
+          requiredAmount: raw.deposit?.requiredAmount ?? 0,
+          ...(raw.deposit?.dueDate ? { dueDate: raw.deposit.dueDate } : {}),
+          paidAmount: raw.deposit?.paidAmount ?? 0,
+        },
+      };
+    },
+  );
+
+  app.put(
+    '/v1/reservations/:reservationId/guarantee',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '보증 방식 변경 — 노쇼를 어떻게 다룰지가 여기서 갈립니다',
+        params: ReservationIdParams,
+        body: SetGuaranteeBody,
+        response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
+      },
+    },
+    async (request) => {
+      const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
+
+      const raw = await operaRequest<OperaReservationPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(
+          request.params.reservationId,
+        )}/guarantee`,
+        { method: 'PUT', hotelId: hotel, body: { guaranteeCode: request.body.guaranteeCode } },
       );
 
       return toReservation(raw);

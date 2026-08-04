@@ -38,6 +38,15 @@ interface MockReservation {
   };
   guest: { profileId: string; givenName: string; surname: string; email?: string };
   sourceOfBusiness: { sourceCode: string; marketCode: string; channelCode?: string };
+  /**
+   * 보증 방식.
+   *
+   * 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다. 6PM 은 18시까지만
+   * 잡아 두고 그 뒤에는 팔아도 되지만, 카드 보증은 노쇼 요금을 물릴 수 있다.
+   */
+  guaranteeCode?: string;
+  /** 취소 시 물린 위약금. 취소된 예약에만 있다. */
+  cancellationPenalty?: number;
 }
 
 /**
@@ -167,6 +176,35 @@ interface MockRateSeason {
   amounts: Record<string, number>;
 }
 
+/**
+ * 취소 규정.
+ *
+ * 언제까지 무료로 취소할 수 있고 그 뒤에는 얼마를 받는지. 손님에게 미리 알린
+ * 조건이라 요금에 붙는다 — 같은 방이라도 싸게 판 요금은 취소가 더 빡빡하다.
+ */
+interface MockCancellationPolicy {
+  name: string;
+  /** 도착일 기준 몇 시간 전까지 무료인지. 0 이면 당일 취소도 무료다. */
+  freeUntilHoursBeforeArrival: number;
+  /** None = 없음, FirstNight = 1박, FullStay = 전액, Percent, Fixed. */
+  penaltyType: string;
+  /** Percent 면 비율(0.5 = 50%), Fixed 면 금액. 나머지 유형에서는 쓰지 않는다. */
+  penaltyValue: number;
+}
+
+/**
+ * 보증금 규정.
+ *
+ * 예약을 잡아 두려고 미리 받는 돈이다. 이것이 없으면 노쇼가 그대로 손실이 된다.
+ */
+interface MockDepositPolicy {
+  /** None = 없음, FirstNight = 1박, Percent = 총액 비율, Fixed = 정액. */
+  type: string;
+  value: number;
+  /** 도착 며칠 전까지 받아야 하는지. */
+  dueDaysBeforeArrival: number;
+}
+
 interface MockRatePlan {
   ratePlanCode: string;
   hotelId: string;
@@ -182,6 +220,8 @@ interface MockRatePlan {
   seasons: MockRateSeason[];
   packageCodes: string[];
   status: string;
+  cancellationPolicy: MockCancellationPolicy;
+  depositPolicy: MockDepositPolicy;
 }
 
 /**
@@ -429,6 +469,13 @@ function seedRates(): void {
       ],
       packageCodes: [],
       status: 'Active',
+      cancellationPolicy: {
+        name: '도착 1일 전 18시까지 무료',
+        freeUntilHoursBeforeArrival: 30,
+        penaltyType: 'FirstNight',
+        penaltyValue: 0,
+      },
+      depositPolicy: { type: 'None', value: 0, dueDaysBeforeArrival: 0 },
     },
     {
       ratePlanCode: 'CORP',
@@ -443,6 +490,14 @@ function seedRates(): void {
       seasons: [],
       packageCodes: ['BFAST'],
       status: 'Active',
+      // 협약 요금은 취소가 자유롭다. 대신 값이 싸다.
+      cancellationPolicy: {
+        name: '당일 취소까지 무료',
+        freeUntilHoursBeforeArrival: 0,
+        penaltyType: 'None',
+        penaltyValue: 0,
+      },
+      depositPolicy: { type: 'None', value: 0, dueDaysBeforeArrival: 0 },
     },
   ];
 
@@ -605,6 +660,135 @@ function sellablePlans(hotelId: string, arrival: string, departure: string): Moc
       plan.sellStartDate <= arrival &&
       plan.sellEndDate >= lastNight,
   );
+}
+
+const PENALTY_TYPES = ['None', 'FirstNight', 'FullStay', 'Percent', 'Fixed'];
+const DEPOSIT_TYPES = ['None', 'FirstNight', 'Percent', 'Fixed'];
+
+function readCancellationPolicy(raw: unknown): MockCancellationPolicy {
+  const value = (raw ?? {}) as Record<string, unknown>;
+  const penaltyType = String(value.penaltyType ?? 'None');
+  assertCode(PENALTY_TYPES, penaltyType, '위약금 유형');
+
+  return {
+    name: String(value.name ?? '취소 자유'),
+    freeUntilHoursBeforeArrival: Number(value.freeUntilHoursBeforeArrival ?? 0),
+    penaltyType,
+    penaltyValue: Number(value.penaltyValue ?? 0),
+  };
+}
+
+function readDepositPolicy(raw: unknown): MockDepositPolicy {
+  const value = (raw ?? {}) as Record<string, unknown>;
+  const type = String(value.type ?? 'None');
+  assertCode(DEPOSIT_TYPES, type, '보증금 유형');
+
+  return {
+    type,
+    value: Number(value.value ?? 0),
+    dueDaysBeforeArrival: Number(value.dueDaysBeforeArrival ?? 0),
+  };
+}
+
+/** OPERA 가 인정하는 보증 방식. 노쇼를 어떻게 다룰지가 여기서 갈린다. */
+const GUARANTEE_CODES = ['SIXPM', 'CREDITCARD', 'DEPOSIT', 'COMPANY', 'COMP'];
+
+/** 취소 위약금과 보증금에 쓰는 거래 코드. */
+const CANCELLATION_FEE_CODE = '8000';
+const DEPOSIT_CODE = '8100';
+
+/**
+ * 무료 취소 기한.
+ *
+ * 도착일 자정에서 규정 시간만큼 앞당긴 시점이다. "1일 전 18시" 는 30시간 전으로
+ * 적는다 — 시(hour)로 두면 호텔마다 다른 기준을 한 값으로 다룰 수 있다.
+ */
+function freeCancellationUntil(arrival: string, hours: number): string {
+  const at = new Date(`${arrival}T00:00:00.000Z`);
+  at.setUTCHours(at.getUTCHours() - hours);
+  return at.toISOString();
+}
+
+/**
+ * 취소 위약금.
+ *
+ * 기한 안이면 0 이다. 기한을 넘겼으면 규정대로 계산한다 — 1박, 전액, 비율,
+ * 정액. 이미 취소된 예약은 다시 물리지 않는다.
+ */
+function cancellationPenalty(
+  reservation: MockReservation,
+  plan: MockRatePlan | undefined,
+  now: Date,
+): { policyName: string; freeUntil: string; withinFreeWindow: boolean; amount: number } {
+  const policy = plan?.cancellationPolicy ?? {
+    name: '규정 없음',
+    freeUntilHoursBeforeArrival: 0,
+    penaltyType: 'None',
+    penaltyValue: 0,
+  };
+
+  const freeUntil = freeCancellationUntil(
+    reservation.roomStay.arrivalDate,
+    policy.freeUntilHoursBeforeArrival,
+  );
+  const withinFreeWindow = now.toISOString() <= freeUntil;
+
+  const total = reservation.roomStay.total?.amount ?? 0;
+  const stayNights = Math.max(
+    1,
+    nights(reservation.roomStay.arrivalDate, reservation.roomStay.departureDate),
+  );
+
+  let amount = 0;
+  if (!withinFreeWindow) {
+    switch (policy.penaltyType) {
+      case 'FirstNight':
+        amount = Math.round(total / stayNights);
+        break;
+      case 'FullStay':
+        amount = total;
+        break;
+      case 'Percent':
+        amount = Math.round(total * policy.penaltyValue);
+        break;
+      case 'Fixed':
+        amount = policy.penaltyValue;
+        break;
+      default:
+        amount = 0;
+    }
+  }
+
+  return { policyName: policy.name, freeUntil, withinFreeWindow, amount };
+}
+
+/** 예약에 요구되는 보증금. 규정이 없으면 0 이다. */
+function depositRequired(
+  reservation: MockReservation,
+  plan: MockRatePlan | undefined,
+): { amount: number; dueDate?: string } {
+  const policy = plan?.depositPolicy;
+  if (!policy || policy.type === 'None') return { amount: 0 };
+
+  const total = reservation.roomStay.total?.amount ?? 0;
+  const stayNights = Math.max(
+    1,
+    nights(reservation.roomStay.arrivalDate, reservation.roomStay.departureDate),
+  );
+
+  const amount =
+    policy.type === 'FirstNight'
+      ? Math.round(total / stayNights)
+      : policy.type === 'Percent'
+        ? Math.round(total * policy.value)
+        : policy.type === 'Fixed'
+          ? policy.value
+          : 0;
+
+  return {
+    amount,
+    dueDate: addDays(reservation.roomStay.arrivalDate, -policy.dueDaysBeforeArrival),
+  };
 }
 
 /**
@@ -1391,6 +1575,14 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         seasons: [],
         packageCodes: ((body.packageCodes ?? []) as string[]).map((c) => String(c).toUpperCase()),
         status: String(body.status ?? 'Active'),
+        /*
+         * 규정을 안 주면 취소 자유·보증금 없음이다.
+         *
+         * 여기서 임의로 위약금을 걸면 손님에게 알리지 않은 조건으로 돈을 받게
+         * 된다. 받겠다면 명시해야 한다.
+         */
+        cancellationPolicy: readCancellationPolicy(body.cancellationPolicy),
+        depositPolicy: readDepositPolicy(body.depositPolicy),
       };
       ratePlans.set(planKey(hotelId, code), created);
       return created as T;
@@ -1499,6 +1691,13 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
           }
         }
         plan.packageCodes = codes;
+      }
+
+      if (body.cancellationPolicy !== undefined) {
+        plan.cancellationPolicy = readCancellationPolicy(body.cancellationPolicy);
+      }
+      if (body.depositPolicy !== undefined) {
+        plan.depositPolicy = readDepositPolicy(body.depositPolicy);
       }
 
       if (body.name !== undefined) plan.name = String(body.name);
@@ -2041,6 +2240,15 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     if (channelCode) assertCode(CHANNEL_CODES, channelCode, '판매 채널');
 
     /*
+     * 보증 방식.
+     *
+     * 기본은 6PM 이다 — 아무 보증 없이 받은 예약은 18시까지만 잡아 둔다. 그렇게
+     * 두지 않으면 노쇼가 그대로 빈 방이 된다.
+     */
+    const guaranteeCode = String(body.guaranteeCode ?? 'SIXPM').toUpperCase();
+    assertCode(GUARANTEE_CODES, guaranteeCode, '보증 방식');
+
+    /*
      * 넘어온 프로필 ID 는 그대로 존중한다.
      *
      * 모의 저장소는 프로세스 수명만큼만 살아 있어 재시작 뒤에는 예전에 발급한
@@ -2151,6 +2359,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         marketCode,
         ...(channelCode ? { channelCode } : {}),
       },
+      guaranteeCode,
     };
 
     store.set(created.reservationId, created);
@@ -2381,6 +2590,116 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     folio.status = 'Closed';
+    return toFolioPayload(folio) as T;
+  }
+
+  // --- 취소 조건 · 보증금 ---------------------------------------------------
+  const policyMatch = /\/reservations\/([^/]+)\/policies$/.exec(path);
+  if (policyMatch && method === 'GET') {
+    const id = decodeURIComponent(policyMatch[1] ?? '');
+    const reservation = store.get(id);
+    if (!reservation) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+
+    const plan = ratePlans.get(planKey(hotelId, reservation.roomStay.ratePlanCode ?? 'BAR'));
+    const penalty = cancellationPenalty(reservation, plan, new Date());
+    const deposit = depositRequired(reservation, plan);
+
+    // 받은 보증금은 폴리오의 결제 합계다. 따로 세면 두 값이 갈린다.
+    const paid = reservationFolios(reservation.reservationId)
+      .flatMap((folio) => folio.postings)
+      .filter((posting) => posting.type === 'Payment')
+      .reduce((sum, posting) => sum - posting.amount, 0);
+
+    return {
+      reservationId: reservation.reservationId,
+      guaranteeCode: reservation.guaranteeCode ?? 'SIXPM',
+      currencyCode: reservation.roomStay.total?.currencyCode ?? 'KRW',
+      cancellation: {
+        policyName: penalty.policyName,
+        freeUntil: penalty.freeUntil,
+        withinFreeWindow: penalty.withinFreeWindow,
+        penaltyAmount: penalty.amount,
+      },
+      deposit: {
+        requiredAmount: deposit.amount,
+        ...(deposit.dueDate ? { dueDate: deposit.dueDate } : {}),
+        paidAmount: paid,
+      },
+    } as T;
+  }
+
+  const guaranteeMatch = /\/reservations\/([^/]+)\/guarantee$/.exec(path);
+  if (guaranteeMatch && (method === 'PUT' || method === 'PATCH')) {
+    const id = decodeURIComponent(guaranteeMatch[1] ?? '');
+    const reservation = store.get(id);
+    if (!reservation) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+    if (['Cancelled', 'CheckedOut', 'NoShow'].includes(reservation.reservationStatus)) {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_STATUS' },
+        `현재 상태(${reservation.reservationStatus})의 예약은 보증 방식을 바꿀 수 없습니다.`,
+      );
+    }
+
+    const guaranteeCode = String(body.guaranteeCode ?? '').toUpperCase();
+    assertCode(GUARANTEE_CODES, guaranteeCode, '보증 방식');
+
+    const updated: MockReservation = { ...reservation, guaranteeCode };
+    store.set(id, updated);
+    return updated as T;
+  }
+
+  const depositMatch = /\/reservations\/([^/]+)\/deposit$/.exec(path);
+  if (depositMatch && method === 'POST') {
+    const id = decodeURIComponent(depositMatch[1] ?? '');
+    const reservation = store.get(id);
+    if (!reservation) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+    if (['Cancelled', 'NoShow'].includes(reservation.reservationStatus)) {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_STATUS' },
+        `현재 상태(${reservation.reservationStatus})의 예약에는 보증금을 받을 수 없습니다.`,
+      );
+    }
+
+    const amount = Number(body.amount ?? 0);
+    if (!(amount > 0)) {
+      throw new OperaApiError(400, { detail: 'INVALID_AMOUNT' }, '보증금은 0보다 커야 합니다.');
+    }
+
+    /*
+     * 보증금은 폴리오에 결제로 올린다.
+     *
+     * 도착 전이라 청구는 없지만, 그 돈은 이미 우리에게 있다. 따로 두면 체크인
+     * 때 손님이 두 번 내게 되거나, 남은 돈을 돌려주지 못한다.
+     */
+    const folio = ensureFolio(hotelId, reservation.reservationId, 1);
+    const reference = body.reference ? String(body.reference) : undefined;
+    if (reference && folio.postings.some((posting) => posting.reference === reference)) {
+      throw new OperaApiError(
+        409,
+        { detail: 'DUPLICATE_REFERENCE' },
+        `이미 처리한 보증금입니다: ${reference}`,
+      );
+    }
+
+    folio.postings.push({
+      postingId: `PST-${(postingSequence += 1)}`,
+      type: 'Payment',
+      transactionCode: String(body.transactionCode ?? DEPOSIT_CODE),
+      description: String(body.description ?? '보증금'),
+      amount: -amount,
+      currencyCode: folio.currencyCode,
+      postedAt: new Date().toISOString(),
+      ...(reference ? { reference } : {}),
+    });
+
     return toFolioPayload(folio) as T;
   }
 
@@ -2722,7 +3041,37 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     if (method === 'DELETE') {
-      const cancelled: MockReservation = { ...existing, reservationStatus: 'Cancelled' };
+      if (existing.reservationStatus === 'Cancelled') {
+        throw new OperaApiError(400, { detail: 'ALREADY_CANCELLED' }, '이미 취소된 예약입니다.');
+      }
+
+      /*
+       * 취소 위약금.
+       *
+       * 무료 기한을 넘겼으면 규정대로 물린다. 폴리오에 달아 두지 않으면 받을
+       * 근거가 사라지고, 카드 보증으로 잡아 둔 예약도 청구할 수 없다.
+       */
+      const plan = ratePlans.get(planKey(hotelId, existing.roomStay.ratePlanCode ?? 'BAR'));
+      const penalty = cancellationPenalty(existing, plan, new Date());
+
+      if (penalty.amount > 0) {
+        const folio = ensureFolio(hotelId, existing.reservationId, 1);
+        folio.postings.push({
+          postingId: `PST-${(postingSequence += 1)}`,
+          type: 'Charge',
+          transactionCode: CANCELLATION_FEE_CODE,
+          description: `취소 위약금 (${penalty.policyName})`,
+          amount: penalty.amount,
+          currencyCode: folio.currencyCode,
+          postedAt: new Date().toISOString(),
+        });
+      }
+
+      const cancelled: MockReservation = {
+        ...existing,
+        reservationStatus: 'Cancelled',
+        cancellationPenalty: penalty.amount,
+      };
       store.set(id, cancelled);
       return cancelled as T;
     }

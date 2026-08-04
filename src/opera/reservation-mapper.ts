@@ -38,6 +38,9 @@ export interface OperaReservationPayload {
     surname?: string;
     email?: string;
   };
+  /** 보증 방식. 노쇼를 어떻게 다룰지가 여기서 갈린다. */
+  guaranteeCode?: string;
+  cancellationPenalty?: number;
 }
 
 export interface OperaReservationListPayload {
@@ -65,6 +68,8 @@ export function toReservation(raw: OperaReservationPayload): Reservation {
     sourceCode: raw.sourceOfBusiness?.sourceCode,
     marketCode: raw.sourceOfBusiness?.marketCode,
     channelCode: raw.sourceOfBusiness?.channelCode,
+    guaranteeCode: raw.guaranteeCode,
+    cancellationPenalty: raw.cancellationPenalty,
     guest: raw.guest && {
       profileId: raw.guest.profileId,
       firstName: raw.guest.givenName,

@@ -14,6 +14,7 @@ import {
   TransferPostingBody,
   VoidPostingBody,
 } from '../schemas/folio.js';
+import { DepositBody } from '../schemas/reservation.js';
 
 /**
  * 폴리오 — 손님의 계산서.
@@ -80,6 +81,44 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
           hotelId: hotel,
           body: request.body.window === undefined ? {} : { window: request.body.window },
         },
+      );
+
+      return reply.code(201).send(toFolio(raw));
+    },
+  );
+
+  /**
+   * 보증금 수납.
+   *
+   * 도착 전이라 청구는 없지만 그 돈은 이미 우리에게 있다. 폴리오에 결제로 올려
+   * 두지 않으면 체크인 때 손님이 두 번 내거나, 남은 돈을 돌려주지 못한다.
+   */
+  app.post(
+    '/v1/reservations/:reservationId/deposit',
+    {
+      schema: {
+        tags: ['folios'],
+        summary: '보증금 수납 — 폴리오에 결제로 올립니다',
+        params: FolioParams,
+        body: DepositBody,
+        response: {
+          201: Folio,
+          400: ErrorResponse,
+          404: ErrorResponse,
+          409: ErrorResponse,
+          502: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { hotelId, ...rest } = request.body;
+      const hotel = hotelId ?? env.ohip.defaultHotelId;
+
+      const raw = await operaRequest<OperaFolioPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(
+          request.params.reservationId,
+        )}/deposit`,
+        { method: 'POST', hotelId: hotel, body: rest },
       );
 
       return reply.code(201).send(toFolio(raw));
