@@ -27,7 +27,7 @@ function createOutage(body: Record<string, unknown>): OutageRow {
   return mockOperaRequest<OutageRow>(OUTAGES, { method: 'POST', hotelId: 'SAND01', body });
 }
 
-function listOutages(query: Record<string, unknown> = {}): OutageRow[] {
+function listOutages(query: Record<string, string | undefined> = {}): OutageRow[] {
   return mockOperaRequest<{ outOfOrders: OutageRow[] }>(OUTAGES, { hotelId: 'SAND01', query })
     .outOfOrders;
 }
