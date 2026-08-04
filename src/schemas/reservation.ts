@@ -86,6 +86,13 @@ export const CreateReservationBody = Type.Object({
   children: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
   /** 단체 블록에서 빼는 예약이면 블록 코드를 넘긴다. 픽업으로 잡힌다. */
   blockCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
+  /**
+   * 자리가 없어도 대기로 받는다.
+   *
+   * 대기 예약은 재고를 차지하지 않고, 자리가 나면 확정으로 올린다. 이 값을
+   * 주지 않으면 매진일 때 예약 자체가 거절된다.
+   */
+  waitlist: Type.Optional(Type.Boolean()),
   /** 예약 경로. 비우면 OPERA 가 기본값(직접 예약)으로 잡는다. */
   sourceCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   marketCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
@@ -127,11 +134,17 @@ export const CheckOutBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
+/** 대기 확정. 확정 시점에 재고를 다시 확인하므로 몸체는 비어 있다. */
+export const ConfirmWaitlistBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
 export type CreateReservationBody = Static<typeof CreateReservationBody>;
 export type UpdateReservationBody = Static<typeof UpdateReservationBody>;
 export type CancelReservationBody = Static<typeof CancelReservationBody>;
 export type CheckInBody = Static<typeof CheckInBody>;
 export type CheckOutBody = Static<typeof CheckOutBody>;
+export type ConfirmWaitlistBody = Static<typeof ConfirmWaitlistBody>;
 
 export type Reservation = Static<typeof Reservation>;
 export type ReservationListQuery = Static<typeof ReservationListQuery>;

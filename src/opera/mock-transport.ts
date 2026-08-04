@@ -446,6 +446,42 @@ function ensureFolio(hotelId: string, reservationId: string, window: number): Mo
   return folio;
 }
 
+/** 객실 타입별 재고. 실제로는 호텔 설정에서 온다. */
+const INVENTORY: Record<string, number> = { STDT: 10, DLXK: 10, SUIT: 4 };
+
+/**
+ * 그 기간에 팔 수 있는 객실 수.
+ *
+ * 재고 안내와 예약 수락이 같은 계산을 써야 한다. 따로 두면 화면에 "매진" 이라고
+ * 떠 있는데 예약은 만들어지는 일이 생긴다.
+ *
+ * 대기 예약은 세지 않는다 — 자리를 차지하지 않고 기다리는 것이 대기다.
+ */
+function availableRooms(
+  hotelId: string,
+  roomType: string,
+  arrival: string,
+  departure: string,
+): number {
+  const sold = [...store.values()].filter(
+    (r) =>
+      r.hotelId === hotelId &&
+      r.roomStay.roomType === roomType &&
+      !['Cancelled', 'NoShow', 'Waitlisted'].includes(r.reservationStatus) &&
+      r.roomStay.arrivalDate < departure &&
+      r.roomStay.departureDate > arrival,
+  ).length;
+
+  const blocked = [...roomOutages.values()].filter(
+    (outage) =>
+      outage.hotelId === hotelId &&
+      rooms.get(outage.roomId)?.roomType === roomType &&
+      outageOverlapsStay(outage, arrival, departure),
+  ).length;
+
+  return Math.max(0, (INVENTORY[roomType] ?? 0) - sold - blocked);
+}
+
 /** 거래 종류가 잔액 방향을 정한다. */
 function signedAmount(type: string, amount: number, negative?: boolean): number {
   switch (type) {
@@ -585,36 +621,16 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     const departure = String(query.endDate ?? dayOffset(1));
     const stayNights = nights(arrival, departure);
 
-    const sold = [...store.values()].filter(
-      (r) =>
-        r.hotelId === hotelId &&
-        !['Cancelled', 'NoShow'].includes(r.reservationStatus) &&
-        r.roomStay.arrivalDate < departure &&
-        r.roomStay.departureDate > arrival,
-    );
-
-    // 투숙 기간에 걸친 사용 불가 객실. OutOfOrder·OutOfService 모두 팔 수 없다.
-    // 둘의 차이는 판매 가능 수가 아니라 점유율의 분모에서 드러난다.
-    const blockedRooms = [...roomOutages.values()].filter(
-      (outage) => outage.hotelId === hotelId && outageOverlapsStay(outage, arrival, departure),
-    );
-
+    // 안내와 수락이 같은 계산을 쓴다. 따로 두면 "매진" 인데 예약이 만들어진다.
     const roomTypes = query.roomType ? [String(query.roomType)] : Object.keys(RATES);
     return {
-      roomStays: roomTypes.map((code) => {
-        const soldForType = sold.filter((r) => r.roomStay.roomType === code).length;
-        const blockedForType = blockedRooms.filter(
-          (outage) => rooms.get(outage.roomId)?.roomType === code,
-        ).length;
-        const inventory = code === 'SUIT' ? 4 : 10;
-        return {
-          roomType: code,
-          roomTypeName: ROOM_TYPE_NAMES[code],
-          available: Math.max(0, inventory - soldForType - blockedForType),
-          ratePlanCode: 'BAR',
-          total: { amount: (RATES[code] ?? 0) * stayNights, currencyCode: 'KRW' },
-        };
-      }),
+      roomStays: roomTypes.map((code) => ({
+        roomType: code,
+        roomTypeName: ROOM_TYPE_NAMES[code],
+        available: availableRooms(hotelId, code, arrival, departure),
+        ratePlanCode: 'BAR',
+        total: { amount: (RATES[code] ?? 0) * stayNights, currencyCode: 'KRW' },
+      })),
     } as T;
   }
 
@@ -1090,6 +1106,25 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       assertPickupPossible(block, roomType, arrival, departure);
     }
 
+    /*
+     * 재고를 넘겨 팔지 않는다.
+     *
+     * 지금까지 모의 계층은 가용 재고를 안내만 하고 예약은 무조건 받았다. 그러면
+     * 화면에 "매진" 이라고 떠 있어도 예약이 만들어져, 재고 판단을 OPERA 에 맡긴
+     * 의미가 사라진다.
+     *
+     * 자리가 없을 때 손님을 그냥 돌려보내지 않으려면 대기로 받는다. 대기 예약은
+     * 재고를 차지하지 않고, 자리가 나면 확정으로 올린다.
+     */
+    const waitlisted = Boolean(roomStay.waitlist);
+    if (!waitlisted && availableRooms(hotelId, roomType, arrival, departure) <= 0) {
+      throw new OperaApiError(
+        409,
+        { detail: 'NO_AVAILABILITY' },
+        `${roomType} 은 ${arrival} ~ ${departure} 기간에 남은 객실이 없습니다. 대기로 받으려면 waitlist 로 요청해 주세요.`,
+      );
+    }
+
     const business = (body.sourceOfBusiness ?? {}) as Record<string, unknown>;
     const sourceCode = String(business.sourceCode ?? 'DIRECT').toUpperCase();
     const marketCode = String(business.marketCode ?? 'TRANSIENT').toUpperCase();
@@ -1123,7 +1158,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       reservationId: `OPERA-${sequence}`,
       confirmationNumber: `OP${sequence}`,
       hotelId,
-      reservationStatus: 'Reserved',
+      reservationStatus: waitlisted ? 'Waitlisted' : 'Reserved',
       roomStay: {
         arrivalDate: arrival,
         departureDate: departure,
@@ -1392,6 +1427,43 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
 
     folio.status = 'Closed';
     return toFolioPayload(folio) as T;
+  }
+
+  // --- 대기 확정 ----------------------------------------------------------
+  const confirmMatch = /\/reservations\/([^/]+)\/confirmWaitlist$/.exec(path);
+  if (confirmMatch && method === 'POST') {
+    const id = decodeURIComponent(confirmMatch[1] ?? '');
+    const existing = store.get(id);
+    if (!existing) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+
+    if (existing.reservationStatus !== 'Waitlisted') {
+      throw new OperaApiError(
+        400,
+        { detail: 'NOT_WAITLISTED' },
+        `대기 상태가 아닙니다: ${existing.reservationStatus}`,
+      );
+    }
+
+    /*
+     * 확정 시점에 재고를 다시 본다.
+     *
+     * 대기에 올릴 때 자리가 없었다는 사실은 지금과 무관하다. 자리가 났는지는
+     * 지금 세어 봐야 알고, 그 사이 다른 대기 건이 먼저 확정됐을 수도 있다.
+     */
+    const { arrivalDate, departureDate, roomType } = existing.roomStay;
+    if (availableRooms(hotelId, roomType, arrivalDate, departureDate) <= 0) {
+      throw new OperaApiError(
+        409,
+        { detail: 'NO_AVAILABILITY' },
+        `아직 ${roomType} 에 빈 객실이 없습니다.`,
+      );
+    }
+
+    const updated: MockReservation = { ...existing, reservationStatus: 'Confirmed' };
+    store.set(id, updated);
+    return updated as T;
   }
 
   // --- 체크인 / 체크아웃 --------------------------------------------------

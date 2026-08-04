@@ -14,6 +14,7 @@ import {
   CancelReservationBody,
   CheckInBody,
   CheckOutBody,
+  ConfirmWaitlistBody,
   CreateReservationBody,
   Reservation,
   ReservationIdParams,
@@ -105,7 +106,13 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
         tags: ['reservations'],
         summary: '예약 생성 — OPERA 가 재고와 요금을 판단합니다',
         body: CreateReservationBody,
-        response: { 201: Reservation, 400: ErrorResponse, 502: ErrorResponse },
+        response: {
+          201: Reservation,
+          400: ErrorResponse,
+          // 매진이면 거절한다. 대기로 받으려면 waitlist 로 다시 요청한다.
+          409: ErrorResponse,
+          502: ErrorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -217,6 +224,41 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
 
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/checkOut`,
+        { method: 'POST', hotelId: hotel, body: {} },
+      );
+
+      return toReservation(raw);
+    },
+  );
+
+  app.post(
+    '/v1/reservations/:reservationId/confirm-waitlist',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '대기 확정 — 확정 시점에 재고를 다시 확인합니다',
+        params: ReservationIdParams,
+        body: ConfirmWaitlistBody,
+        response: {
+          200: Reservation,
+          400: ErrorResponse,
+          404: ErrorResponse,
+          409: ErrorResponse,
+          502: ErrorResponse,
+        },
+      },
+    },
+    async (request) => {
+      const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
+
+      /*
+       * 대기에 올릴 때 자리가 없었다는 사실은 지금과 무관하다.
+       *
+       * 자리가 났는지는 확정하는 순간 세어 봐야 알고, 그 사이 다른 대기 건이
+       * 먼저 확정됐을 수도 있다. 그 판단을 OPERA 가 한다.
+       */
+      const raw = await operaRequest<OperaReservationPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/confirmWaitlist`,
         { method: 'POST', hotelId: hotel, body: {} },
       );
 

@@ -163,6 +163,7 @@ pnpm dev
 | `POST` | `/v1/reservations/:reservationId/no-show` | No-show 处理 |
 | `POST` | `/v1/reservations/:reservationId/check-in` | 入住（含分房） |
 | `POST` | `/v1/reservations/:reservationId/check-out` | 离店 |
+| `POST` | `/v1/reservations/:reservationId/confirm-waitlist` | 候补转确认（复核房态） |
 | `GET` `POST` | `/v1/reservations/:id/folios` | 查询账单 · 开设账窗 |
 | `POST` | `/v1/reservations/:id/folios/:window/postings` | 登记账目 |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 冲销账目 |

@@ -171,6 +171,7 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `POST` | `/v1/reservations/:reservationId/no-show` | Mark no-show |
 | `POST` | `/v1/reservations/:reservationId/check-in` | Check in (with room assignment) |
 | `POST` | `/v1/reservations/:reservationId/check-out` | Check out |
+| `POST` | `/v1/reservations/:reservationId/confirm-waitlist` | Confirm a waitlisted booking |
 | `GET` `POST` | `/v1/reservations/:id/folios` | Read folios · open a window |
 | `POST` | `/v1/reservations/:id/folios/:window/postings` | Post a transaction |
 | `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | Void a transaction |

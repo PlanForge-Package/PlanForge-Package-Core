@@ -100,9 +100,11 @@ export function toOperaRoomStay(input: {
   adults?: number;
   children?: number;
   blockCode?: string;
+  waitlist?: boolean;
 }): Record<string, unknown> {
   return {
     ...(input.blockCode ? { blockCode: input.blockCode } : {}),
+    ...(input.waitlist ? { waitlist: true } : {}),
     ...(input.arrivalDate ? { arrivalDate: input.arrivalDate } : {}),
     ...(input.departureDate ? { departureDate: input.departureDate } : {}),
     ...(input.roomTypeCode ? { roomType: input.roomTypeCode } : {}),
