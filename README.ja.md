@@ -161,6 +161,12 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `GET` | `/health` | サービス状態 |
 | `GET` | `/v1/availability` | 期間別の客室在庫 |
 | `GET` | `/v1/rates` | 期間料金 |
+| `GET` `POST` | `/v1/rate-plans` | 料金コード一覧・登録 |
+| `GET` `PATCH` | `/v1/rate-plans/:ratePlanCode` | 料金コード単件・修正 |
+| `POST` | `/v1/rate-plans/:ratePlanCode/seasons` | シーズン料金の追加（期間・曜日）|
+| `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | シーズン料金の削除 |
+| `GET` `POST` | `/v1/packages` | パッケージ一覧・登録 |
+| `PATCH` | `/v1/packages/:packageCode` | パッケージ修正 |
 | `GET` | `/v1/reservations` | 予約一覧 |
 | `GET` | `/v1/reservations/:reservationId` | 予約単件 |
 | `POST` | `/v1/reservations` | 予約作成 |

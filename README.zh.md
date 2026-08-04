@@ -155,6 +155,12 @@ pnpm dev
 | `GET` | `/health` | 服务状态 |
 | `GET` | `/v1/availability` | 指定期间的可售房况 |
 | `GET` | `/v1/rates` | 指定期间的房价 |
+| `GET` `POST` | `/v1/rate-plans` | 房价代码列表 · 新建 |
+| `GET` `PATCH` | `/v1/rate-plans/:ratePlanCode` | 单个房价代码 · 修改 |
+| `POST` | `/v1/rate-plans/:ratePlanCode/seasons` | 新增季节房价（期间 · 星期）|
+| `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | 删除季节房价 |
+| `GET` `POST` | `/v1/packages` | 套餐列表 · 新建 |
+| `PATCH` | `/v1/packages/:packageCode` | 修改套餐 |
 | `GET` | `/v1/reservations` | 预订列表 |
 | `GET` | `/v1/reservations/:reservationId` | 单条预订 |
 | `POST` | `/v1/reservations` | 创建预订 |

@@ -163,6 +163,12 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `GET` | `/health` | Service status |
 | `GET` | `/v1/availability` | Room availability for a date range |
 | `GET` | `/v1/rates` | Rates for a date range |
+| `GET` `POST` | `/v1/rate-plans` | Rate plans · create |
+| `GET` `PATCH` | `/v1/rate-plans/:ratePlanCode` | One rate plan · update |
+| `POST` | `/v1/rate-plans/:ratePlanCode/seasons` | Add a season (dates · days of week) |
+| `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | Remove a season |
+| `GET` `POST` | `/v1/packages` | Packages · create |
+| `PATCH` | `/v1/packages/:packageCode` | Update a package |
 | `GET` | `/v1/reservations` | Reservation list |
 | `GET` | `/v1/reservations/:reservationId` | Single reservation |
 | `POST` | `/v1/reservations` | Create reservation |

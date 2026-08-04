@@ -149,6 +149,339 @@ function nights(arrival: string, departure: string): number {
   return Math.max(1, Math.round((to - from) / 86_400_000));
 }
 
+// --- 요금 엔진 -------------------------------------------------------------
+
+/**
+ * 기간과 요일에 따라 기준 요금을 덮어쓴다.
+ *
+ * 성수기·주말은 같은 객실이라도 값이 다르다. 총액만 주고받으면 어느 날이 왜
+ * 비싼지 설명할 수 없어, 하루 단위로 계산해 내려준다.
+ */
+interface MockRateSeason {
+  seasonId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** 0=일요일. 비우면 기간 내 매일. */
+  daysOfWeek?: number[];
+  amounts: Record<string, number>;
+}
+
+interface MockRatePlan {
+  ratePlanCode: string;
+  hotelId: string;
+  name: string;
+  description?: string;
+  currencyCode: string;
+  marketCode: string;
+  /** 판매 기간. 이 밖의 날짜는 이 요금으로 팔지 않는다. */
+  sellStartDate: string;
+  sellEndDate: string;
+  /** 객실 타입별 기준 요금. 여기 없는 객실 타입은 이 요금으로 팔지 않는다. */
+  baseAmounts: Record<string, number>;
+  seasons: MockRateSeason[];
+  packageCodes: string[];
+  status: string;
+}
+
+/**
+ * 요금에 딸려 붙는 부가 상품.
+ *
+ * `includedInRate` 면 요금 안에 이미 들어 있어 총액이 늘지 않는다 — 조식 포함
+ * 요금이 그렇다. 아니면 총액에 더한다. 이 구분을 놓치면 조식값을 두 번 받는다.
+ */
+interface MockPackage {
+  packageCode: string;
+  hotelId: string;
+  name: string;
+  amount: number;
+  /** PerNight = 1박당, PerStay = 투숙당 1회, PerPerson = 1인 1박당. */
+  calculation: string;
+  transactionCode: string;
+  includedInRate: boolean;
+}
+
+const ratePlans = new Map<string, MockRatePlan>();
+const packages = new Map<string, MockPackage>();
+let seasonSequence = 0;
+
+function planKey(hotelId: string, code: string): string {
+  return `${hotelId}::${code.toUpperCase()}`;
+}
+
+function seedRates(): void {
+  if (ratePlans.size > 0) return;
+  const hotelId = 'SAND01';
+
+  for (const pkg of [
+    {
+      packageCode: 'BFAST',
+      name: '조식',
+      amount: 25000,
+      calculation: 'PerPerson',
+      transactionCode: '2000',
+      includedInRate: false,
+    },
+    {
+      packageCode: 'PARK',
+      name: '주차',
+      amount: 15000,
+      calculation: 'PerNight',
+      transactionCode: '2100',
+      includedInRate: false,
+    },
+    {
+      packageCode: 'LATE',
+      name: '레이트 체크아웃',
+      amount: 50000,
+      calculation: 'PerStay',
+      transactionCode: '2200',
+      includedInRate: false,
+    },
+  ]) {
+    packages.set(planKey(hotelId, pkg.packageCode), { hotelId, ...pkg });
+  }
+
+  const year = new Date().getUTCFullYear();
+  const plans: MockRatePlan[] = [
+    {
+      ratePlanCode: 'BAR',
+      hotelId,
+      name: '기준 요금',
+      description: '판매 가능한 최선 요금',
+      currencyCode: 'KRW',
+      marketCode: 'TRANSIENT',
+      sellStartDate: `${year - 1}-01-01`,
+      sellEndDate: `${year + 2}-12-31`,
+      baseAmounts: { ...RATES },
+      seasons: [
+        {
+          seasonId: 'SEA-1',
+          name: '성수기 주중',
+          startDate: `${year}-07-15`,
+          endDate: `${year}-08-20`,
+          daysOfWeek: [0, 1, 2, 3, 4],
+          amounts: { STDT: 250000, DLXK: 320000, SUIT: 520000 },
+        },
+        {
+          seasonId: 'SEA-2',
+          name: '성수기 주말',
+          startDate: `${year}-07-15`,
+          endDate: `${year}-08-20`,
+          daysOfWeek: [5, 6],
+          amounts: { STDT: 280000, DLXK: 360000, SUIT: 580000 },
+        },
+        {
+          seasonId: 'SEA-3',
+          name: '주말',
+          startDate: `${year - 1}-01-01`,
+          endDate: `${year}-07-14`,
+          daysOfWeek: [5, 6],
+          amounts: { STDT: 220000, DLXK: 280000, SUIT: 460000 },
+        },
+        {
+          seasonId: 'SEA-4',
+          name: '주말',
+          startDate: `${year}-08-21`,
+          endDate: `${year + 2}-12-31`,
+          daysOfWeek: [5, 6],
+          amounts: { STDT: 220000, DLXK: 280000, SUIT: 460000 },
+        },
+      ],
+      packageCodes: [],
+      status: 'Active',
+    },
+    {
+      ratePlanCode: 'CORP',
+      hotelId,
+      name: '법인 협약',
+      description: '계약 법인 전용',
+      currencyCode: 'KRW',
+      marketCode: 'CORPORATE',
+      sellStartDate: `${year - 1}-01-01`,
+      sellEndDate: `${year + 2}-12-31`,
+      baseAmounts: { STDT: 160000, DLXK: 200000, SUIT: 340000 },
+      seasons: [],
+      packageCodes: ['BFAST'],
+      status: 'Active',
+    },
+  ];
+
+  for (const plan of plans) {
+    ratePlans.set(planKey(plan.hotelId, plan.ratePlanCode), plan);
+  }
+  seasonSequence = 4;
+}
+
+/**
+ * 같은 날 같은 객실에 두 시즌이 걸리지 않게 한다.
+ *
+ * 겹치도록 두면 무엇이 이기는지가 등록 순서에 달리고, 성수기 금요일이 평일보다
+ * 싸지는 일이 생긴다. 성수기 주중·주말처럼 요일을 갈라 따로 등록해야 한다.
+ */
+function assertNoSeasonConflict(plan: MockRatePlan, candidate: MockRateSeason): void {
+  const days = candidate.daysOfWeek?.length ? candidate.daysOfWeek : [0, 1, 2, 3, 4, 5, 6];
+  const roomTypes = Object.keys(candidate.amounts);
+
+  for (const season of plan.seasons) {
+    if (candidate.startDate > season.endDate || candidate.endDate < season.startDate) continue;
+
+    const seasonDays = season.daysOfWeek?.length ? season.daysOfWeek : [0, 1, 2, 3, 4, 5, 6];
+    if (!days.some((day) => seasonDays.includes(day))) continue;
+
+    const clashing = roomTypes.filter((roomType) => season.amounts[roomType] !== undefined);
+    if (clashing.length === 0) continue;
+
+    throw new OperaApiError(
+      409,
+      { detail: 'SEASON_OVERLAP' },
+      `기간이 겹치는 시즌이 이미 있습니다: ${season.name} (${season.startDate} ~ ${season.endDate}, ${clashing.join(', ')}). 요일을 나누거나 기간을 조정해 주세요.`,
+    );
+  }
+}
+
+function dayOfWeek(date: string): number {
+  return new Date(`${date}T00:00:00Z`).getUTCDay();
+}
+
+/**
+ * 그날 그 객실의 단가.
+ *
+ * 시즌은 뒤에 등록한 것이 이긴다 — 넓은 기간 위에 좁은 기간을 덮어쓰는 것이
+ * 요금 설정의 보통 순서다.
+ */
+function nightlyAmount(plan: MockRatePlan, roomType: string, date: string): number {
+  let amount = plan.baseAmounts[roomType] ?? 0;
+  for (const season of plan.seasons) {
+    if (date < season.startDate || date > season.endDate) continue;
+    if (season.daysOfWeek?.length && !season.daysOfWeek.includes(dayOfWeek(date))) continue;
+    if (season.amounts[roomType] === undefined) continue;
+    amount = season.amounts[roomType];
+  }
+  return amount;
+}
+
+interface Quote {
+  ratePlanCode: string;
+  ratePlanName: string;
+  roomType: string;
+  currencyCode: string;
+  nightlyRates: Array<{ date: string; amount: number; packageAmount: number }>;
+  roomTotal: number;
+  packageTotal: number;
+  totalAmount: number;
+  packages: Array<{
+    packageCode: string;
+    name: string;
+    amount: number;
+    calculation: string;
+    includedInRate: boolean;
+  }>;
+}
+
+/** 요금 계산. 안내와 청구가 같은 값을 쓰도록 한 곳에서만 계산한다. */
+function quote(
+  plan: MockRatePlan,
+  roomType: string,
+  arrival: string,
+  departure: string,
+  adults: number,
+): Quote | undefined {
+  if (plan.baseAmounts[roomType] === undefined) return undefined;
+
+  const dates = stayDates(arrival, departure);
+  const attached = plan.packageCodes
+    .map((code) => packages.get(planKey(plan.hotelId, code)))
+    .filter((pkg): pkg is MockPackage => Boolean(pkg));
+
+  const perNight = attached
+    .filter((pkg) => !pkg.includedInRate)
+    .reduce((sum, pkg) => {
+      if (pkg.calculation === 'PerNight') return sum + pkg.amount;
+      if (pkg.calculation === 'PerPerson') return sum + pkg.amount * Math.max(1, adults);
+      return sum;
+    }, 0);
+  const perStay = attached
+    .filter((pkg) => !pkg.includedInRate && pkg.calculation === 'PerStay')
+    .reduce((sum, pkg) => sum + pkg.amount, 0);
+
+  const nightlyRates = dates.map((date, index) => ({
+    date,
+    amount: nightlyAmount(plan, roomType, date),
+    // 투숙당 1회인 패키지는 첫날에 붙인다. 매일 붙이면 박수만큼 더 받는다.
+    packageAmount: perNight + (index === 0 ? perStay : 0),
+  }));
+
+  const roomTotal = nightlyRates.reduce((sum, night) => sum + night.amount, 0);
+  const packageTotal = nightlyRates.reduce((sum, night) => sum + night.packageAmount, 0);
+
+  return {
+    ratePlanCode: plan.ratePlanCode,
+    ratePlanName: plan.name,
+    roomType,
+    currencyCode: plan.currencyCode,
+    nightlyRates,
+    roomTotal,
+    packageTotal,
+    totalAmount: roomTotal + packageTotal,
+    packages: attached.map((pkg) => ({
+      packageCode: pkg.packageCode,
+      name: pkg.name,
+      amount: pkg.amount,
+      calculation: pkg.calculation,
+      includedInRate: pkg.includedInRate,
+    })),
+  };
+}
+
+/**
+ * 블록의 그날 그 객실 값.
+ *
+ * 협의 요금을 넣었으면 그것이 이긴다 — 단체는 값을 따로 합의하고, 그 합의가
+ * 정가보다 우선한다. 넣지 않았으면 지정한 요금 코드의 계산을 따르고, 그것도
+ * 없으면 기준 요금이다.
+ */
+function blockAmount(
+  hotelId: string,
+  slot: Record<string, unknown>,
+  roomType: string,
+  date: string,
+): number {
+  if (slot.amount !== undefined) return Number(slot.amount);
+
+  const code = slot.ratePlanCode ? String(slot.ratePlanCode) : 'BAR';
+  const plan = ratePlans.get(planKey(hotelId, code));
+  if (!plan || plan.baseAmounts[roomType] === undefined) return RATES[roomType] ?? 0;
+
+  return nightlyAmount(plan, roomType, date);
+}
+
+/** 그 기간에 팔 수 있는 요금만 고른다. */
+function sellablePlans(hotelId: string, arrival: string, departure: string): MockRatePlan[] {
+  const lastNight = addDays(departure, -1);
+  return [...ratePlans.values()].filter(
+    (plan) =>
+      plan.hotelId === hotelId &&
+      plan.status === 'Active' &&
+      plan.sellStartDate <= arrival &&
+      plan.sellEndDate >= lastNight,
+  );
+}
+
+/**
+ * 예약에 적용할 요금을 찾는다.
+ *
+ * 없는 요금 코드로 예약을 받으면 금액이 0 인 예약이 생기고, 그 사실은 손님이
+ * 나갈 때에야 드러난다.
+ */
+function requirePlan(hotelId: string, code: string): MockRatePlan {
+  const plan = ratePlans.get(planKey(hotelId, code));
+  if (!plan) {
+    throw new OperaApiError(400, { detail: 'INVALID_RATE_PLAN' }, `알 수 없는 요금 코드: ${code}`);
+  }
+  return plan;
+}
+
 /** 모의 객실 상태. 실제로는 OPERA 가 들고 있다. */
 const rooms = new Map<string, { roomStatus: string; occupied: boolean; roomType: string }>();
 
@@ -634,6 +967,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
   seedRooms();
   seedOutages();
   seedBlocks();
+  seedRates();
 
   const method = options.method ?? 'GET';
   const query = options.query ?? {};
@@ -648,14 +982,28 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
 
     // 안내와 수락이 같은 계산을 쓴다. 따로 두면 "매진" 인데 예약이 만들어진다.
     const roomTypes = query.roomType ? [String(query.roomType)] : Object.keys(RATES);
+    const adults = Number(query.adults ?? 1);
+    const sellable = sellablePlans(hotelId, arrival, departure);
+
     return {
-      roomStays: roomTypes.map((code) => ({
-        roomType: code,
-        roomTypeName: ROOM_TYPE_NAMES[code],
-        available: availableRooms(hotelId, code, arrival, departure),
-        ratePlanCode: 'BAR',
-        total: { amount: (RATES[code] ?? 0) * stayNights, currencyCode: 'KRW' },
-      })),
+      roomStays: roomTypes.map((code) => {
+        // 안내 총액은 그 객실을 팔 수 있는 가장 싼 요금을 기준으로 한다.
+        const cheapest = sellable
+          .map((plan) => quote(plan, code, arrival, departure, adults))
+          .filter((row): row is Quote => Boolean(row))
+          .sort((a, b) => a.totalAmount - b.totalAmount)[0];
+
+        return {
+          roomType: code,
+          roomTypeName: ROOM_TYPE_NAMES[code],
+          available: availableRooms(hotelId, code, arrival, departure),
+          ratePlanCode: cheapest?.ratePlanCode ?? 'BAR',
+          total: {
+            amount: cheapest?.totalAmount ?? (RATES[code] ?? 0) * stayNights,
+            currencyCode: 'KRW',
+          },
+        };
+      }),
     } as T;
   }
 
@@ -663,22 +1011,303 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
   if (method === 'GET' && /\/rates$/.test(path)) {
     const arrival = String(query.startDate ?? dayOffset(0));
     const departure = String(query.endDate ?? dayOffset(1));
-    const stayNights = nights(arrival, departure);
+    const adults = Number(query.adults ?? 1);
+    const wantedRoomType = query.roomType ? String(query.roomType) : undefined;
+    const wantedPlan = query.ratePlanCode ? String(query.ratePlanCode).toUpperCase() : undefined;
 
-    return {
-      ratePlans: Object.keys(RATES).map((code) => ({
-        ratePlanCode: code === 'SUIT' ? 'CORP' : 'BAR',
-        roomType: code,
-        roomTypeName: ROOM_TYPE_NAMES[code],
-        currencyCode: 'KRW',
-        // 하루치 단가와 총액을 함께 준다. OPERA 도 기간 요금을 이렇게 내려준다.
-        nightlyRates: Array.from({ length: stayNights }, (_, i) => ({
-          date: addDays(arrival, i),
-          amount: RATES[code],
-        })),
-        total: { amount: (RATES[code] ?? 0) * stayNights, currencyCode: 'KRW' },
-      })),
-    } as T;
+    const offers = sellablePlans(hotelId, arrival, departure)
+      .filter((plan) => !wantedPlan || plan.ratePlanCode === wantedPlan)
+      .flatMap((plan) =>
+        (wantedRoomType ? [wantedRoomType] : Object.keys(plan.baseAmounts))
+          .map((code) => quote(plan, code, arrival, departure, adults))
+          .filter((row): row is Quote => Boolean(row))
+          .map((row) => ({
+            ratePlanCode: row.ratePlanCode,
+            ratePlanName: row.ratePlanName,
+            roomType: row.roomType,
+            roomTypeName: ROOM_TYPE_NAMES[row.roomType],
+            currencyCode: row.currencyCode,
+            // 하루치 단가와 총액을 함께 준다. OPERA 도 기간 요금을 이렇게 내려준다.
+            nightlyRates: row.nightlyRates,
+            packages: row.packages,
+            total: { amount: row.totalAmount, currencyCode: row.currencyCode },
+          })),
+      );
+
+    return { ratePlans: offers } as T;
+  }
+
+  // --- 요금 코드 관리 ------------------------------------------------------
+  if (/\/rtp\/v1\/hotels\/[^/]+\/packages$/.test(path)) {
+    if (method === 'GET') {
+      return {
+        packages: [...packages.values()].filter((pkg) => pkg.hotelId === hotelId),
+      } as T;
+    }
+    if (method === 'POST') {
+      const code = String(body.packageCode ?? '')
+        .trim()
+        .toUpperCase();
+      if (!code) {
+        throw new OperaApiError(400, { detail: 'INVALID_CODE' }, '패키지 코드가 필요합니다.');
+      }
+      if (packages.has(planKey(hotelId, code))) {
+        throw new OperaApiError(
+          409,
+          { detail: 'DUPLICATE_CODE' },
+          `이미 쓰고 있는 패키지 코드입니다: ${code}`,
+        );
+      }
+      const calculation = String(body.calculation ?? 'PerNight');
+      assertCode(['PerNight', 'PerStay', 'PerPerson'], calculation, '패키지 계산 방식');
+
+      const created: MockPackage = {
+        packageCode: code,
+        hotelId,
+        name: String(body.name ?? code),
+        amount: Number(body.amount ?? 0),
+        calculation,
+        transactionCode: String(body.transactionCode ?? '2000'),
+        includedInRate: Boolean(body.includedInRate),
+      };
+      packages.set(planKey(hotelId, code), created);
+      return created as T;
+    }
+  }
+
+  const packageMatch = /\/rtp\/v1\/hotels\/[^/]+\/packages\/([^/]+)$/.exec(path);
+  if (packageMatch && (method === 'PATCH' || method === 'PUT')) {
+    const code = decodeURIComponent(packageMatch[1] ?? '').toUpperCase();
+    const existing = packages.get(planKey(hotelId, code));
+    if (!existing) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `패키지를 찾을 수 없습니다: ${code}`);
+    }
+    if (body.calculation !== undefined) {
+      assertCode(
+        ['PerNight', 'PerStay', 'PerPerson'],
+        String(body.calculation),
+        '패키지 계산 방식',
+      );
+    }
+    const updated: MockPackage = {
+      ...existing,
+      ...(body.name === undefined ? {} : { name: String(body.name) }),
+      ...(body.amount === undefined ? {} : { amount: Number(body.amount) }),
+      ...(body.calculation === undefined ? {} : { calculation: String(body.calculation) }),
+      ...(body.transactionCode === undefined
+        ? {}
+        : { transactionCode: String(body.transactionCode) }),
+      ...(body.includedInRate === undefined
+        ? {}
+        : { includedInRate: Boolean(body.includedInRate) }),
+    };
+    packages.set(planKey(hotelId, code), updated);
+    return updated as T;
+  }
+
+  if (/\/rtp\/v1\/hotels\/[^/]+\/ratePlans$/.test(path)) {
+    if (method === 'GET') {
+      const wanted = query.status ? String(query.status) : undefined;
+      return {
+        ratePlans: [...ratePlans.values()].filter(
+          (plan) => plan.hotelId === hotelId && (!wanted || plan.status === wanted),
+        ),
+      } as T;
+    }
+    if (method === 'POST') {
+      const code = String(body.ratePlanCode ?? '')
+        .trim()
+        .toUpperCase();
+      if (!code) {
+        throw new OperaApiError(400, { detail: 'INVALID_CODE' }, '요금 코드가 필요합니다.');
+      }
+      if (ratePlans.has(planKey(hotelId, code))) {
+        throw new OperaApiError(
+          409,
+          { detail: 'DUPLICATE_CODE' },
+          `이미 쓰고 있는 요금 코드입니다: ${code}`,
+        );
+      }
+
+      const baseAmounts = (body.baseAmounts ?? {}) as Record<string, unknown>;
+      const amounts: Record<string, number> = {};
+      for (const [roomType, value] of Object.entries(baseAmounts)) {
+        if (!(roomType in RATES)) {
+          throw new OperaApiError(
+            400,
+            { detail: 'INVALID_ROOM_TYPE' },
+            `알 수 없는 객실 타입: ${roomType}`,
+          );
+        }
+        amounts[roomType] = Number(value);
+      }
+      if (Object.keys(amounts).length === 0) {
+        throw new OperaApiError(
+          400,
+          { detail: 'NO_AMOUNTS' },
+          '객실 타입별 기준 요금이 하나도 없습니다. 팔 수 없는 요금은 만들지 않습니다.',
+        );
+      }
+
+      const sellStartDate = String(body.sellStartDate ?? dayOffset(0));
+      const sellEndDate = String(body.sellEndDate ?? dayOffset(365));
+      if (sellEndDate < sellStartDate) {
+        throw new OperaApiError(
+          400,
+          { detail: 'INVALID_DATES' },
+          '판매 종료일은 시작일보다 뒤여야 합니다.',
+        );
+      }
+
+      for (const code of (body.packageCodes ?? []) as string[]) {
+        if (!packages.has(planKey(hotelId, String(code).toUpperCase()))) {
+          throw new OperaApiError(
+            400,
+            { detail: 'INVALID_PACKAGE' },
+            `알 수 없는 패키지 코드: ${code}`,
+          );
+        }
+      }
+
+      const created: MockRatePlan = {
+        ratePlanCode: code,
+        hotelId,
+        name: String(body.name ?? code),
+        description: body.description ? String(body.description) : undefined,
+        currencyCode: String(body.currencyCode ?? 'KRW'),
+        marketCode: String(body.marketCode ?? 'TRANSIENT'),
+        sellStartDate,
+        sellEndDate,
+        baseAmounts: amounts,
+        seasons: [],
+        packageCodes: ((body.packageCodes ?? []) as string[]).map((c) => String(c).toUpperCase()),
+        status: String(body.status ?? 'Active'),
+      };
+      ratePlans.set(planKey(hotelId, code), created);
+      return created as T;
+    }
+  }
+
+  const seasonMatch = /\/rtp\/v1\/hotels\/[^/]+\/ratePlans\/([^/]+)\/seasons$/.exec(path);
+  if (seasonMatch && method === 'POST') {
+    const plan = requirePlan(hotelId, decodeURIComponent(seasonMatch[1] ?? ''));
+    const startDate = String(body.startDate ?? dayOffset(0));
+    const endDate = String(body.endDate ?? dayOffset(1));
+    if (endDate < startDate) {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_DATES' },
+        '시즌 종료일은 시작일보다 뒤여야 합니다.',
+      );
+    }
+
+    const amounts: Record<string, number> = {};
+    for (const [roomType, value] of Object.entries(
+      (body.amounts ?? {}) as Record<string, unknown>,
+    )) {
+      if (plan.baseAmounts[roomType] === undefined) {
+        throw new OperaApiError(
+          400,
+          { detail: 'INVALID_ROOM_TYPE' },
+          `이 요금이 팔지 않는 객실 타입입니다: ${roomType}`,
+        );
+      }
+      amounts[roomType] = Number(value);
+    }
+    if (Object.keys(amounts).length === 0) {
+      throw new OperaApiError(400, { detail: 'NO_AMOUNTS' }, '시즌 요금이 비어 있습니다.');
+    }
+
+    seasonSequence += 1;
+    const season: MockRateSeason = {
+      seasonId: `SEA-${seasonSequence}`,
+      name: String(body.name ?? '시즌'),
+      startDate,
+      endDate,
+      ...(Array.isArray(body.daysOfWeek) && body.daysOfWeek.length
+        ? { daysOfWeek: (body.daysOfWeek as number[]).map(Number) }
+        : {}),
+      amounts,
+    };
+    assertNoSeasonConflict(plan, season);
+    plan.seasons.push(season);
+    return plan as T;
+  }
+
+  const seasonDeleteMatch = /\/rtp\/v1\/hotels\/[^/]+\/ratePlans\/([^/]+)\/seasons\/([^/]+)$/.exec(
+    path,
+  );
+  if (seasonDeleteMatch && method === 'DELETE') {
+    const plan = requirePlan(hotelId, decodeURIComponent(seasonDeleteMatch[1] ?? ''));
+    const seasonId = decodeURIComponent(seasonDeleteMatch[2] ?? '');
+    const index = plan.seasons.findIndex((season) => season.seasonId === seasonId);
+    if (index < 0) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `시즌을 찾을 수 없습니다: ${seasonId}`);
+    }
+    plan.seasons.splice(index, 1);
+    return plan as T;
+  }
+
+  const planMatch = /\/rtp\/v1\/hotels\/[^/]+\/ratePlans\/([^/]+)$/.exec(path);
+  if (planMatch) {
+    const plan = requirePlan(hotelId, decodeURIComponent(planMatch[1] ?? ''));
+    if (method === 'GET') return plan as T;
+
+    if (method === 'PATCH' || method === 'PUT') {
+      if (body.baseAmounts !== undefined) {
+        const amounts: Record<string, number> = {};
+        for (const [roomType, value] of Object.entries(
+          body.baseAmounts as Record<string, unknown>,
+        )) {
+          if (!(roomType in RATES)) {
+            throw new OperaApiError(
+              400,
+              { detail: 'INVALID_ROOM_TYPE' },
+              `알 수 없는 객실 타입: ${roomType}`,
+            );
+          }
+          amounts[roomType] = Number(value);
+        }
+        if (Object.keys(amounts).length === 0) {
+          throw new OperaApiError(
+            400,
+            { detail: 'NO_AMOUNTS' },
+            '객실 타입별 기준 요금이 하나도 없습니다.',
+          );
+        }
+        plan.baseAmounts = amounts;
+      }
+
+      if (body.packageCodes !== undefined) {
+        const codes = (body.packageCodes as string[]).map((c) => String(c).toUpperCase());
+        for (const code of codes) {
+          if (!packages.has(planKey(hotelId, code))) {
+            throw new OperaApiError(
+              400,
+              { detail: 'INVALID_PACKAGE' },
+              `알 수 없는 패키지 코드: ${code}`,
+            );
+          }
+        }
+        plan.packageCodes = codes;
+      }
+
+      if (body.name !== undefined) plan.name = String(body.name);
+      if (body.description !== undefined) plan.description = String(body.description);
+      if (body.marketCode !== undefined) plan.marketCode = String(body.marketCode);
+      if (body.status !== undefined) plan.status = String(body.status);
+      if (body.sellStartDate !== undefined) plan.sellStartDate = String(body.sellStartDate);
+      if (body.sellEndDate !== undefined) plan.sellEndDate = String(body.sellEndDate);
+      if (plan.sellEndDate < plan.sellStartDate) {
+        throw new OperaApiError(
+          400,
+          { detail: 'INVALID_DATES' },
+          '판매 종료일은 시작일보다 뒤여야 합니다.',
+        );
+      }
+
+      return plan as T;
+    }
   }
 
   // --- 하우스키핑: 객실 상태 --------------------------------------------
@@ -989,6 +1618,18 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
           `알 수 없는 객실 타입: ${roomType}`,
         );
       }
+      // 요금 코드를 지정했으면 실재해야 한다. 없는 코드로 잡아 두면 룸리스트가
+      // 빠져나갈 때 값을 매길 수 없다.
+      if (slot.ratePlanCode) {
+        const plan = requirePlan(hotelId, String(slot.ratePlanCode));
+        if (plan.baseAmounts[roomType] === undefined && slot.amount === undefined) {
+          throw new OperaApiError(
+            400,
+            { detail: 'RATE_PLAN_ROOM_TYPE' },
+            `${plan.ratePlanCode} 로는 ${roomType} 을 팔지 않습니다. 협의 요금을 넣어 주세요.`,
+          );
+        }
+      }
     }
 
     blockSequence += 1;
@@ -1010,7 +1651,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
           roomsBlocked: Number(slot.roomsBlocked ?? 0),
           roomsPickedUp: 0,
           ratePlanCode: slot.ratePlanCode ? String(slot.ratePlanCode) : undefined,
-          amount: RATES[String(slot.roomType)],
+          amount: blockAmount(hotelId, slot, String(slot.roomType), date),
         })),
       ),
     };
@@ -1042,11 +1683,40 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         );
       }
 
+      /*
+       * 협의 요금 조정.
+       *
+       * 이미 빠져나간 예약의 금액은 건드리지 않는다 — 그 손님과는 그 값으로
+       * 합의가 끝났다. 앞으로 빠져나갈 몫만 새 값으로 잡는다.
+       */
+      const rates = (body.rates ?? []) as Array<Record<string, unknown>>;
+      const allocations = existing.roomTypeAllocations.map((slot) => {
+        const change = rates.find((row) => String(row.roomType) === slot.roomType);
+        if (!change) return slot;
+        return {
+          ...slot,
+          amount: Number(change.amount),
+          ...(change.ratePlanCode ? { ratePlanCode: String(change.ratePlanCode) } : {}),
+        };
+      });
+
+      for (const row of rates) {
+        const roomType = String(row.roomType);
+        if (!existing.roomTypeAllocations.some((slot) => slot.roomType === roomType)) {
+          throw new OperaApiError(
+            400,
+            { detail: 'NOT_IN_BLOCK' },
+            `이 블록이 잡지 않은 객실 타입입니다: ${roomType}`,
+          );
+        }
+      }
+
       const updated: MockBlock = {
         ...existing,
         blockStatus: nextStatus,
         ...(body.blockName ? { blockName: String(body.blockName) } : {}),
         ...(body.cutoffDate ? { cutoffDate: String(body.cutoffDate) } : {}),
+        roomTypeAllocations: allocations,
       };
       blocks.set(blockId, updated);
       return updated as T;
@@ -1178,6 +1848,57 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
+    /*
+     * 요금은 요금 엔진이 정한다.
+     *
+     * 안내와 청구가 다른 계산을 쓰면 손님이 본 금액과 폴리오에 달리는 금액이
+     * 갈린다. 같은 quote() 를 쓰고, 팔 수 없는 조합은 여기서 거절한다.
+     */
+    const adultCount = Number(roomStay.adultCount ?? 1);
+    const ratePlanCode = String(roomStay.ratePlanCode ?? 'BAR').toUpperCase();
+    const plan = requirePlan(hotelId, ratePlanCode);
+    if (plan.status !== 'Active') {
+      throw new OperaApiError(
+        400,
+        { detail: 'RATE_PLAN_INACTIVE' },
+        `중지된 요금 코드입니다: ${plan.ratePlanCode}`,
+      );
+    }
+    if (plan.sellStartDate > arrival || plan.sellEndDate < addDays(departure, -1)) {
+      throw new OperaApiError(
+        400,
+        { detail: 'RATE_PLAN_NOT_SELLABLE' },
+        `${plan.ratePlanCode} 는 ${plan.sellStartDate} ~ ${plan.sellEndDate} 기간에만 팝니다.`,
+      );
+    }
+    const priced = quote(plan, roomType, arrival, departure, adultCount);
+    if (!priced) {
+      throw new OperaApiError(
+        400,
+        { detail: 'RATE_PLAN_ROOM_TYPE' },
+        `${plan.ratePlanCode} 로는 ${roomType} 을 팔지 않습니다.`,
+      );
+    }
+
+    /*
+     * 블록에서 빠져나가면 그 블록의 협의 요금으로 판다.
+     *
+     * 단체는 값을 따로 합의한다. 정가로 잡으면 합의가 계약서에만 남고 손님은
+     * 다른 금액을 낸다. 일자별로 잡아 둔 값을 그대로 더한다.
+     */
+    let totalAmount = priced.totalAmount;
+    if (block) {
+      const negotiated = stayDates(arrival, departure).map(
+        (date) =>
+          block.roomTypeAllocations.find((slot) => slot.date === date && slot.roomType === roomType)
+            ?.amount,
+      );
+      if (negotiated.every((amount) => amount !== undefined)) {
+        totalAmount =
+          negotiated.reduce((sum, amount) => sum + (amount ?? 0), 0) + priced.packageTotal;
+      }
+    }
+
     sequence += 1;
     const created: MockReservation = {
       reservationId: `OPERA-${sequence}`,
@@ -1188,12 +1909,12 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         arrivalDate: arrival,
         departureDate: departure,
         roomType,
-        ratePlanCode: String(roomStay.ratePlanCode ?? 'BAR'),
-        adultCount: Number(roomStay.adultCount ?? 1),
+        ratePlanCode: plan.ratePlanCode,
+        adultCount,
         childCount: Number(roomStay.childCount ?? 0),
         total: {
-          amount: (RATES[roomType] ?? 0) * nights(arrival, departure),
-          currencyCode: 'KRW',
+          amount: totalAmount,
+          currencyCode: priced.currencyCode,
         },
         ...(blockCode ? { blockCode } : {}),
       },
@@ -1762,11 +2483,30 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
           ...(roomStay.childCount === undefined ? {} : { childCount: Number(roomStay.childCount) }),
         },
       };
+      /*
+       * 고치면 다시 매긴다.
+       *
+       * 날짜나 객실 타입이 바뀌면 요금도 바뀐다. 예전 총액을 그대로 두면 손님이
+       * 3박으로 늘렸는데 2박 값만 청구된다.
+       */
+      const updatedPlan = requirePlan(hotelId, updated.roomStay.ratePlanCode ?? 'BAR');
+      const repriced = quote(
+        updatedPlan,
+        updated.roomStay.roomType,
+        updated.roomStay.arrivalDate,
+        updated.roomStay.departureDate,
+        updated.roomStay.adultCount ?? 1,
+      );
+      if (!repriced) {
+        throw new OperaApiError(
+          400,
+          { detail: 'RATE_PLAN_ROOM_TYPE' },
+          `${updatedPlan.ratePlanCode} 로는 ${updated.roomStay.roomType} 을 팔지 않습니다.`,
+        );
+      }
       updated.roomStay.total = {
-        amount:
-          (RATES[updated.roomStay.roomType] ?? 0) *
-          nights(updated.roomStay.arrivalDate, updated.roomStay.departureDate),
-        currencyCode: 'KRW',
+        amount: repriced.totalAmount,
+        currencyCode: repriced.currencyCode,
       };
       store.set(id, updated);
       return updated as T;
@@ -1801,6 +2541,8 @@ export function resetMockStore(): void {
   blocks.clear();
   businessDates.clear();
   profiles.clear();
+  ratePlans.clear();
+  packages.clear();
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
   outageSequence = OUTAGE_SEQUENCE_START;

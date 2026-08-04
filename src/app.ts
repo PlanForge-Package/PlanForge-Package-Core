@@ -15,6 +15,7 @@ import { healthRoutes } from './routes/health.js';
 import { housekeepingRoutes } from './routes/housekeeping.js';
 import { nightAuditRoutes } from './routes/night-audit.js';
 import { profileRoutes } from './routes/profiles.js';
+import { ratePlanRoutes } from './routes/rate-plans.js';
 import { rateRoutes } from './routes/rates.js';
 import { reservationRoutes } from './routes/reservations.js';
 import { roomOutageRoutes } from './routes/room-outages.js';
@@ -77,6 +78,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(nightAuditRoutes);
   await app.register(profileRoutes);
   await app.register(rateRoutes);
+  await app.register(ratePlanRoutes);
   await app.register(reservationRoutes);
   await app.register(roomOutageRoutes);
 

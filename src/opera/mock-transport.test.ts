@@ -62,20 +62,36 @@ describe('모의 OPERA — 예약 생성', () => {
     expect(after.totalResults).toBe(before.totalResults + 1);
   });
 
-  it('총액을 박수만큼 계산해 돌려준다', () => {
+  // 안내와 청구가 갈리면 손님이 본 금액과 폴리오에 달리는 금액이 달라진다.
+  it('총액이 요금 조회와 같다', () => {
+    const arrival = tomorrow(1);
+    const departure = tomorrow(3);
+
+    const quoted = mockOperaRequest<{
+      ratePlans: Array<{ ratePlanCode: string; roomType: string; total: { amount: number } }>;
+    }>('/rtp/v1/hotels/SAND01/rates', {
+      hotelId: 'SAND01',
+      query: { startDate: arrival, endDate: departure, roomType: 'DLXK', ratePlanCode: 'BAR' },
+    });
+
     const created = mockOperaRequest<{ roomStay: { total: { amount: number } } }>(
       '/rsv/v1/hotels/SAND01/reservations',
       {
         method: 'POST',
         hotelId: 'SAND01',
         body: {
-          roomStay: { arrivalDate: tomorrow(1), departureDate: tomorrow(3), roomType: 'DLXK' },
+          roomStay: {
+            arrivalDate: arrival,
+            departureDate: departure,
+            roomType: 'DLXK',
+            ratePlanCode: 'BAR',
+          },
           guest: { givenName: 'A', surname: 'B' },
         },
       },
     );
-    // DLXK 240,000 × 2박
-    expect(created.roomStay.total.amount).toBe(480000);
+
+    expect(created.roomStay.total.amount).toBe(quoted.ratePlans[0]?.total.amount);
   });
 
   it('알 수 없는 객실 타입은 400 으로 거절한다', () => {
@@ -123,13 +139,33 @@ describe('모의 OPERA — 수정·취소', () => {
 
   it('수정하면 총액이 다시 계산된다', () => {
     const id = create();
+    const before = mockOperaRequest<{ roomStay: { total: { amount: number } } }>(
+      `/rsv/v1/hotels/SAND01/reservations/${id}`,
+      { hotelId: 'SAND01' },
+    );
+
     const updated = mockOperaRequest<{ roomStay: { roomType: string; total: { amount: number } } }>(
       `/rsv/v1/hotels/SAND01/reservations/${id}`,
       { method: 'PATCH', hotelId: 'SAND01', body: { roomStay: { roomType: 'SUIT' } } },
     );
+
+    const quoted = mockOperaRequest<{ ratePlans: Array<{ total: { amount: number } }> }>(
+      '/rtp/v1/hotels/SAND01/rates',
+      {
+        hotelId: 'SAND01',
+        query: {
+          startDate: tomorrow(1),
+          endDate: tomorrow(2),
+          roomType: 'SUIT',
+          ratePlanCode: 'BAR',
+        },
+      },
+    );
+
     expect(updated.roomStay.roomType).toBe('SUIT');
-    // SUIT 400,000 × 1박
-    expect(updated.roomStay.total.amount).toBe(400000);
+    expect(updated.roomStay.total.amount).toBe(quoted.ratePlans[0]?.total.amount);
+    // 스탠다드에서 스위트로 올렸으니 금액도 올라야 한다.
+    expect(updated.roomStay.total.amount).toBeGreaterThan(before.roomStay.total.amount);
   });
 
   it('취소는 삭제가 아니라 상태 전이다', () => {
@@ -203,15 +239,25 @@ describe('모의 OPERA — 재고', () => {
 describe('모의 OPERA — 요금', () => {
   it('일자별 단가와 총액을 함께 준다', () => {
     const result = mockOperaRequest<{
-      ratePlans: Array<{ roomType: string; nightlyRates: unknown[]; total: { amount: number } }>;
+      ratePlans: Array<{
+        ratePlanCode: string;
+        roomType: string;
+        nightlyRates: Array<{ date: string; amount: number; packageAmount: number }>;
+        total: { amount: number };
+      }>;
     }>('/rtp/v1/hotels/SAND01/rates', {
       hotelId: 'SAND01',
-      query: { startDate: tomorrow(1), endDate: tomorrow(4) },
+      query: { startDate: tomorrow(1), endDate: tomorrow(4), ratePlanCode: 'BAR' },
     });
 
     const deluxe = result.ratePlans.find((p) => p.roomType === 'DLXK');
     expect(deluxe?.nightlyRates).toHaveLength(3);
-    expect(deluxe?.total.amount).toBe(240000 * 3);
+    // 총액은 일자별 단가의 합이다. 따로 계산하면 시즌이 붙는 순간 갈린다.
+    const summed = (deluxe?.nightlyRates ?? []).reduce(
+      (sum, night) => sum + night.amount + night.packageAmount,
+      0,
+    );
+    expect(deluxe?.total.amount).toBe(summed);
   });
 });
 

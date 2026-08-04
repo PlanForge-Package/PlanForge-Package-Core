@@ -136,6 +136,8 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
             roomType: slot.roomTypeCode,
             roomsBlocked: slot.blocked,
             ...(slot.ratePlanCode ? { ratePlanCode: slot.ratePlanCode } : {}),
+            // 협의 요금. 넣지 않으면 요금 코드가 정한 값으로 판다.
+            ...(slot.amount === undefined ? {} : { amount: slot.amount }),
           })),
         },
       });
@@ -157,7 +159,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     },
     async (request) => {
       const hotel = env.ohip.defaultHotelId;
-      const { name, status, cutoffDate } = request.body;
+      const { name, status, cutoffDate, rates } = request.body;
 
       const raw = await operaRequest<OperaBlockPayload>(
         `/blk/v1/hotels/${hotel}/blocks/${encodeURIComponent(request.params.blockId)}`,
@@ -168,6 +170,15 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
             ...(name ? { blockName: name } : {}),
             ...(status ? { blockStatus: status } : {}),
             ...(cutoffDate ? { cutoffDate } : {}),
+            ...(rates
+              ? {
+                  rates: rates.map((row) => ({
+                    roomType: row.roomTypeCode,
+                    ...(row.ratePlanCode ? { ratePlanCode: row.ratePlanCode } : {}),
+                    amount: row.amount,
+                  })),
+                }
+              : {}),
           },
         },
       );

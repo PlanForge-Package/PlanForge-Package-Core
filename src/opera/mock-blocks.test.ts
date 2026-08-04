@@ -17,6 +17,8 @@ interface BlockShape {
     roomType: string;
     roomsBlocked: number;
     roomsPickedUp: number;
+    ratePlanCode?: string;
+    amount?: number;
   }>;
 }
 
@@ -64,6 +66,105 @@ describe('모의 OPERA — 블록 생성', () => {
   it('같은 호텔에 같은 블록 코드는 두 번 만들 수 없다', () => {
     createBlock({ blockCode: 'DUPE' });
     expect(() => createBlock({ blockCode: 'DUPE' })).toThrow(/이미 쓰고 있는/);
+  });
+});
+
+describe('모의 OPERA — 블록 협의 요금', () => {
+  it('협의 요금을 넣으면 일자마다 그 값으로 잡힌다', () => {
+    const created = createBlock({
+      blockCode: 'NEGO',
+      roomTypeAllocations: [{ roomType: 'STDT', roomsBlocked: 5, amount: 120000 }],
+    });
+
+    expect(created.roomTypeAllocations.every((a) => a.amount === 120000)).toBe(true);
+  });
+
+  it('협의 요금이 없으면 요금 코드의 계산을 따른다', () => {
+    const created = createBlock({
+      blockCode: 'BYPLAN',
+      roomTypeAllocations: [{ roomType: 'STDT', roomsBlocked: 5, ratePlanCode: 'CORP' }],
+    });
+
+    // CORP 는 STDT 를 160,000 에 판다.
+    expect(created.roomTypeAllocations.every((a) => a.amount === 160000)).toBe(true);
+  });
+
+  it('없는 요금 코드로는 잡을 수 없다', () => {
+    expect(() =>
+      createBlock({
+        blockCode: 'BADPLAN',
+        roomTypeAllocations: [{ roomType: 'STDT', roomsBlocked: 1, ratePlanCode: 'NOPE' }],
+      }),
+    ).toThrow(/알 수 없는 요금 코드/);
+  });
+
+  // 그 요금으로 팔지 않는 타입이면 값을 매길 수 없다.
+  it('요금이 팔지 않는 객실 타입은 협의 요금을 요구한다', () => {
+    mockOperaRequest('/rtp/v1/hotels/SAND01/ratePlans/CORP', {
+      method: 'PATCH',
+      hotelId: 'SAND01',
+      body: { baseAmounts: { STDT: 160000 } },
+    });
+
+    expect(() =>
+      createBlock({
+        blockCode: 'NOSUIT',
+        roomTypeAllocations: [{ roomType: 'SUIT', roomsBlocked: 1, ratePlanCode: 'CORP' }],
+      }),
+    ).toThrow(/협의 요금을 넣어/);
+  });
+
+  it('블록에서 빠져나간 예약은 협의 요금으로 잡힌다', () => {
+    createBlock({
+      blockCode: 'PICKRATE',
+      roomTypeAllocations: [{ roomType: 'STDT', roomsBlocked: 5, amount: 100000 }],
+    });
+
+    const created = mockOperaRequest<{ roomStay: { total: { amount: number } } }>(
+      '/rsv/v1/hotels/SAND01/reservations',
+      {
+        method: 'POST',
+        hotelId: 'SAND01',
+        body: {
+          roomStay: {
+            arrivalDate: day(30),
+            departureDate: day(32),
+            roomType: 'STDT',
+            blockCode: 'PICKRATE',
+          },
+          guest: { givenName: 'A', surname: 'B' },
+        },
+      },
+    );
+
+    expect(created.roomStay.total.amount).toBe(200000);
+  });
+
+  it('수정으로 협의 요금을 조정할 수 있다', () => {
+    const created = createBlock({
+      blockCode: 'ADJUST',
+      roomTypeAllocations: [{ roomType: 'STDT', roomsBlocked: 5, amount: 100000 }],
+    });
+
+    const updated = mockOperaRequest<BlockShape>(`${BLOCKS}/${created.blockId}`, {
+      method: 'PATCH',
+      hotelId: 'SAND01',
+      body: { rates: [{ roomType: 'STDT', amount: 90000 }] },
+    });
+
+    expect(updated.roomTypeAllocations.every((a) => a.amount === 90000)).toBe(true);
+  });
+
+  it('블록이 잡지 않은 객실 타입은 조정할 수 없다', () => {
+    const created = createBlock({ blockCode: 'NOTHERE' });
+
+    expect(() =>
+      mockOperaRequest(`${BLOCKS}/${created.blockId}`, {
+        method: 'PATCH',
+        hotelId: 'SAND01',
+        body: { rates: [{ roomType: 'SUIT', amount: 90000 }] },
+      }),
+    ).toThrow(/잡지 않은 객실 타입/);
   });
 });
 

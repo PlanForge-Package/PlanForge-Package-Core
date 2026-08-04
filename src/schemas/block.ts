@@ -79,6 +79,13 @@ export const CreateBlockBody = Type.Object({
       /** 기간 전체에 같은 수를 잡는다. 일자별 조정은 수정에서 한다. */
       blocked: Type.Integer({ minimum: 0, maximum: 999 }),
       ratePlanCode: Type.Optional(Type.String()),
+      /**
+       * 협의 요금. 넣으면 요금 코드의 계산 대신 이 금액으로 판다.
+       *
+       * 단체는 값을 따로 합의한다 — 정가로 잡아 두면 룸리스트가 실제 계약과
+       * 다른 금액으로 빠져나간다.
+       */
+      amount: Type.Optional(Type.Number({ minimum: 0 })),
     }),
     { minItems: 1 },
   ),
@@ -88,6 +95,17 @@ export const UpdateBlockBody = Type.Object({
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   status: Type.Optional(BlockStatus),
   cutoffDate: Type.Optional(DateString),
+  /** 협의 요금 조정. 보낸 객실 타입만 바꾼다. */
+  rates: Type.Optional(
+    Type.Array(
+      Type.Object({
+        roomTypeCode: Type.String({ minLength: 1 }),
+        ratePlanCode: Type.Optional(Type.String()),
+        amount: Type.Number({ minimum: 0 }),
+      }),
+      { minItems: 1 },
+    ),
+  ),
 });
 
 export type Block = Static<typeof Block>;

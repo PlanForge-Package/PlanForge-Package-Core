@@ -22,7 +22,8 @@ export const rateRoutes: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     async (request) => {
-      const { hotelId, arrivalDate, departureDate, roomTypeCode, ratePlanCode } = request.query;
+      const { hotelId, arrivalDate, departureDate, roomTypeCode, ratePlanCode, adults } =
+        request.query;
       const hotel = hotelId ?? env.ohip.defaultHotelId;
 
       const raw = await operaRequest<OperaRatePayload>(`/rtp/v1/hotels/${hotel}/rates`, {
@@ -32,6 +33,7 @@ export const rateRoutes: FastifyPluginAsyncTypebox = async (app) => {
           endDate: departureDate,
           roomType: roomTypeCode,
           ratePlanCode,
+          adults,
         },
       });
 
@@ -42,12 +44,21 @@ export const rateRoutes: FastifyPluginAsyncTypebox = async (app) => {
         nights: nightsBetween(arrivalDate, departureDate),
         offers: (raw.ratePlans ?? []).map((plan) => ({
           ratePlanCode: plan.ratePlanCode ?? '',
+          ratePlanName: plan.ratePlanName,
           roomTypeCode: plan.roomType ?? '',
           roomTypeName: plan.roomTypeName,
           currency: plan.currencyCode ?? plan.total?.currencyCode ?? 'KRW',
           nightlyRates: (plan.nightlyRates ?? []).map((night) => ({
             date: night.date ?? '',
             amount: night.amount ?? 0,
+            packageAmount: night.packageAmount ?? 0,
+          })),
+          packages: (plan.packages ?? []).map((pkg) => ({
+            packageCode: pkg.packageCode ?? '',
+            name: pkg.name ?? '',
+            amount: pkg.amount ?? 0,
+            calculation: pkg.calculation ?? 'PerNight',
+            includedInRate: Boolean(pkg.includedInRate),
           })),
           totalAmount: plan.total?.amount ?? 0,
         })),
@@ -67,10 +78,18 @@ function nightsBetween(arrival: string, departure: string): number {
 interface OperaRatePayload {
   ratePlans?: Array<{
     ratePlanCode?: string;
+    ratePlanName?: string;
     roomType?: string;
     roomTypeName?: string;
     currencyCode?: string;
-    nightlyRates?: Array<{ date?: string; amount?: number }>;
+    nightlyRates?: Array<{ date?: string; amount?: number; packageAmount?: number }>;
+    packages?: Array<{
+      packageCode?: string;
+      name?: string;
+      amount?: number;
+      calculation?: string;
+      includedInRate?: boolean;
+    }>;
     total?: { amount?: number; currencyCode?: string };
   }>;
 }

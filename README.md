@@ -160,6 +160,12 @@ pnpm dev
 | `GET` | `/health` | 서비스 상태 |
 | `GET` | `/v1/availability` | 기간별 객실 가용 현황 |
 | `GET` | `/v1/rates` | 기간 요금 |
+| `GET` `POST` | `/v1/rate-plans` | 요금 코드 목록 · 등록 |
+| `GET` `PATCH` | `/v1/rate-plans/:ratePlanCode` | 요금 코드 단건 · 수정 |
+| `POST` | `/v1/rate-plans/:ratePlanCode/seasons` | 시즌 요금 추가 (기간·요일) |
+| `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | 시즌 요금 삭제 |
+| `GET` `POST` | `/v1/packages` | 패키지 목록 · 등록 |
+| `PATCH` | `/v1/packages/:packageCode` | 패키지 수정 |
 | `GET` | `/v1/reservations` | 예약 목록 |
 | `GET` | `/v1/reservations/:reservationId` | 예약 단건 |
 | `POST` | `/v1/reservations` | 예약 생성 |
