@@ -170,6 +170,9 @@ pnpm dev
 | `POST` | `/v1/profiles/:profileId/merge` | 合并重复档案 |
 | `GET` | `/v1/housekeeping/rooms` | 房态 |
 | `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | 变更房态 |
+| `GET` | `/v1/housekeeping/outages` | 停用房间列表 |
+| `POST` | `/v1/housekeeping/outages` | 登记房间停用 |
+| `DELETE` | `/v1/housekeeping/outages/:outageId` | 解除停用 |
 | `GET` | `/v1/business-date` | 酒店营业日 |
 
 ### 设计取舍

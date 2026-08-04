@@ -195,7 +195,8 @@ describe('모의 OPERA — 재고', () => {
       '/par/v1/hotels/SAND01/availability',
       { hotelId: 'SAND01', query: { startDate: tomorrow(1), endDate: tomorrow(2) } },
     );
-    expect(result.roomStays.find((r) => r.roomType === 'SUIT')?.available).toBe(4);
+    // 스위트 재고 4개 중 1502 는 시드에서 공사 중(OutOfOrder)이라 팔 수 없다.
+    expect(result.roomStays.find((r) => r.roomType === 'SUIT')?.available).toBe(3);
   });
 });
 

@@ -175,6 +175,9 @@ pnpm dev
 | `POST` | `/v1/profiles/:profileId/merge` | 중복 프로필 병합 |
 | `GET` | `/v1/housekeeping/rooms` | 객실 상태 |
 | `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | 객실 상태 변경 |
+| `GET` | `/v1/housekeeping/outages` | 사용 불가 객실 목록 |
+| `POST` | `/v1/housekeeping/outages` | 객실을 사용 불가로 등록 |
+| `DELETE` | `/v1/housekeeping/outages/:outageId` | 사용 불가 해제 |
 | `GET` | `/v1/business-date` | 호텔 영업일 |
 
 ### 설계 원칙

@@ -16,6 +16,7 @@ import { nightAuditRoutes } from './routes/night-audit.js';
 import { profileRoutes } from './routes/profiles.js';
 import { rateRoutes } from './routes/rates.js';
 import { reservationRoutes } from './routes/reservations.js';
+import { roomOutageRoutes } from './routes/room-outages.js';
 
 /**
  * 호출자가 고칠 수 있는 OPERA 거절은 그대로 내려보낸다.
@@ -75,6 +76,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(profileRoutes);
   await app.register(rateRoutes);
   await app.register(reservationRoutes);
+  await app.register(roomOutageRoutes);
 
   // OPERA 오류를 게이트웨이 표준 응답으로 변환한다.
   app.setErrorHandler((error, request, reply) => {

@@ -178,6 +178,9 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `POST` | `/v1/profiles/:profileId/merge` | Merge duplicate profiles |
 | `GET` | `/v1/housekeeping/rooms` | Room status |
 | `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | Change room status |
+| `GET` | `/v1/housekeeping/outages` | Out-of-order / out-of-service rooms |
+| `POST` | `/v1/housekeeping/outages` | Take a room out of inventory |
+| `DELETE` | `/v1/housekeeping/outages/:outageId` | Put the room back on sale |
 | `GET` | `/v1/business-date` | Hotel business date |
 
 ### Design decisions

@@ -176,6 +176,9 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `POST` | `/v1/profiles/:profileId/merge` | 重複プロファイルの統合 |
 | `GET` | `/v1/housekeeping/rooms` | 客室ステータス |
 | `PUT` | `/v1/housekeeping/rooms/:roomNumber/status` | 客室ステータス変更 |
+| `GET` | `/v1/housekeeping/outages` | 使用不可客室の一覧 |
+| `POST` | `/v1/housekeeping/outages` | 客室を使用不可として登録 |
+| `DELETE` | `/v1/housekeeping/outages/:outageId` | 使用不可の解除 |
 | `GET` | `/v1/business-date` | ホテルの営業日 |
 
 ### 設計判断

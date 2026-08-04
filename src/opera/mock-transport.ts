@@ -143,7 +143,25 @@ function nights(arrival: string, departure: string): number {
 }
 
 /** 모의 객실 상태. 실제로는 OPERA 가 들고 있다. */
-const rooms = new Map<string, { roomStatus: string; occupied: boolean }>();
+const rooms = new Map<string, { roomStatus: string; occupied: boolean; roomType: string }>();
+
+interface MockRoomOutage {
+  outageId: string;
+  hotelId: string;
+  roomId: string;
+  /** OutOfOrder = 재고에서 제외, OutOfService = 판매만 중지. */
+  kind: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  returnStatus: string;
+}
+
+/** 사용 불가 객실 기간. 예약 재고를 깎는 쪽이라 예약과 같은 수명으로 둔다. */
+const roomOutages = new Map<string, MockRoomOutage>();
+
+const OUTAGE_SEQUENCE_START = 700;
+let outageSequence = OUTAGE_SEQUENCE_START;
 
 interface MockBlockAllocation {
   date: string;
@@ -300,18 +318,73 @@ function applyPickup(block: MockBlock, roomType: string, arrival: string, depart
 
 function seedRooms(): void {
   if (rooms.size > 0) return;
-  const base: Array<[string, string, boolean]> = [
-    ['1101', 'Clean', false],
-    ['1102', 'Dirty', false],
-    ['1103', 'Inspected', false],
-    ['1201', 'Clean', false],
-    ['1202', 'Clean', false],
-    ['1203', 'Inspected', true],
-    ['1501', 'Clean', false],
-    ['1502', 'OutOfOrder', false],
+  // 객실 번호 · 하우스키핑 상태 · 재실 여부 · 객실 타입. BE 시드와 같은 편성이다.
+  const base: Array<[string, string, boolean, string]> = [
+    ['1101', 'Clean', false, 'STDT'],
+    ['1102', 'Dirty', false, 'STDT'],
+    ['1103', 'Inspected', false, 'DLXK'],
+    ['1201', 'Clean', false, 'DLXK'],
+    ['1202', 'Clean', false, 'DLXK'],
+    ['1203', 'Inspected', true, 'DLXK'],
+    ['1501', 'Clean', false, 'SUIT'],
+    ['1502', 'OutOfOrder', false, 'SUIT'],
   ];
-  for (const [roomId, roomStatus, occupied] of base) {
-    rooms.set(roomId, { roomStatus, occupied });
+  for (const [roomId, roomStatus, occupied, roomType] of base) {
+    rooms.set(roomId, { roomStatus, occupied, roomType });
+  }
+}
+
+function seedOutages(): void {
+  if (roomOutages.size > 0) return;
+  // 시드 객실 1502 가 OutOfOrder 인 이유를 기간으로 남겨 둔다. 상태만 있고
+  // 근거가 없으면 언제 되파는지 아무도 모른다.
+  const outageId = `OOO-${(outageSequence += 1)}`;
+  roomOutages.set(outageId, {
+    outageId,
+    hotelId: 'SAND01',
+    roomId: '1502',
+    kind: 'OutOfOrder',
+    startDate: dayOffset(-3),
+    endDate: dayOffset(14),
+    reason: '욕실 배관 교체 공사',
+    returnStatus: 'Dirty',
+  });
+}
+
+/** 사용 불가 기간이 투숙 기간(도착 ~ 출발 전날)에 하루라도 걸치는가. */
+function outageOverlapsStay(outage: MockRoomOutage, arrival: string, departure: string): boolean {
+  const lastNight = addDays(departure, -1);
+  return outage.startDate <= lastNight && outage.endDate >= arrival;
+}
+
+/** 해당 날짜에 사용 불가인가. 시작·종료일 모두 포함이다. */
+function outageCoversDate(outage: MockRoomOutage, date: string): boolean {
+  return outage.startDate <= date && outage.endDate >= date;
+}
+
+/** 그 기간에 팔 수 있는 객실인지. 사용 불가 기간과 겹치면 배정할 수 없다. */
+function assertRoomAssignable(
+  hotelId: string,
+  roomId: string,
+  arrival: string,
+  departure: string,
+): void {
+  if (!rooms.has(roomId)) {
+    throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `객실을 찾을 수 없습니다: ${roomId}`);
+  }
+
+  const blocking = [...roomOutages.values()].find(
+    (outage) =>
+      outage.hotelId === hotelId &&
+      outage.roomId === roomId &&
+      outageOverlapsStay(outage, arrival, departure),
+  );
+  if (blocking) {
+    throw new OperaApiError(
+      409,
+      { detail: 'ROOM_UNAVAILABLE' },
+      `객실 ${roomId} 는 ${blocking.startDate} ~ ${blocking.endDate} 기간에 사용 불가입니다: ${blocking.reason}`,
+    );
   }
 }
 
@@ -368,6 +441,7 @@ export function mockOperaRequest<T>(path: string, options: OperaRequestOptions):
 function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
   seed();
   seedRooms();
+  seedOutages();
   seedBlocks();
 
   const method = options.method ?? 'GET';
@@ -389,15 +463,24 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         r.roomStay.departureDate > arrival,
     );
 
+    // 투숙 기간에 걸친 사용 불가 객실. OutOfOrder·OutOfService 모두 팔 수 없다.
+    // 둘의 차이는 판매 가능 수가 아니라 점유율의 분모에서 드러난다.
+    const blockedRooms = [...roomOutages.values()].filter(
+      (outage) => outage.hotelId === hotelId && outageOverlapsStay(outage, arrival, departure),
+    );
+
     const roomTypes = query.roomType ? [String(query.roomType)] : Object.keys(RATES);
     return {
       roomStays: roomTypes.map((code) => {
         const soldForType = sold.filter((r) => r.roomStay.roomType === code).length;
+        const blockedForType = blockedRooms.filter(
+          (outage) => rooms.get(outage.roomId)?.roomType === code,
+        ).length;
         const inventory = code === 'SUIT' ? 4 : 10;
         return {
           roomType: code,
           roomTypeName: ROOM_TYPE_NAMES[code],
-          available: Math.max(0, inventory - soldForType),
+          available: Math.max(0, inventory - soldForType - blockedForType),
           ratePlanCode: 'BAR',
           total: { amount: (RATES[code] ?? 0) * stayNights, currencyCode: 'KRW' },
         };
@@ -462,6 +545,148 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     const updated = { ...room, roomStatus: next };
     rooms.set(roomId, updated);
     return { hotelId, roomId, ...updated } as T;
+  }
+
+  // --- 사용 불가 객실 -----------------------------------------------------
+  if (method === 'GET' && /\/hsk\/v1\/hotels\/[^/]+\/outOfOrders$/.test(path)) {
+    const roomFilter = query.roomId ? String(query.roomId) : undefined;
+    const onDate = query.onDate ? String(query.onDate) : undefined;
+
+    return {
+      outOfOrders: [...roomOutages.values()]
+        .filter((outage) => outage.hotelId === hotelId)
+        .filter((outage) => !roomFilter || outage.roomId === roomFilter)
+        .filter((outage) => !onDate || outageCoversDate(outage, onDate))
+        .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.roomId.localeCompare(b.roomId))
+        .map((outage) => ({ ...outage, roomType: rooms.get(outage.roomId)?.roomType })),
+    } as T;
+  }
+
+  if (method === 'POST' && /\/hsk\/v1\/hotels\/[^/]+\/outOfOrders$/.test(path)) {
+    const roomId = String(body.roomId ?? '');
+    const room = rooms.get(roomId);
+    if (!room) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `객실을 찾을 수 없습니다: ${roomId}`);
+    }
+
+    const kind = String(body.kind ?? '');
+    if (kind !== 'OutOfOrder' && kind !== 'OutOfService') {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_KIND' },
+        `알 수 없는 사용 불가 구분입니다: ${kind}. 가능한 값: OutOfOrder, OutOfService`,
+      );
+    }
+
+    const startDate = String(body.startDate ?? '');
+    const endDate = String(body.endDate ?? '');
+    if (endDate < startDate) {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_RANGE' },
+        `종료일(${endDate})이 시작일(${startDate})보다 앞설 수 없습니다.`,
+      );
+    }
+
+    // 이미 지난 기간을 막아도 그 사이 판 객실이 되돌아오지 않는다. 실적만 어긋난다.
+    const today = businessDates.get(hotelId) ?? dayOffset(0);
+    if (endDate < today) {
+      throw new OperaApiError(
+        400,
+        { detail: 'PAST_PERIOD' },
+        `이미 지난 기간(${startDate} ~ ${endDate})은 사용 불가로 등록할 수 없습니다.`,
+      );
+    }
+
+    // 같은 객실을 두 번 빼면 재고에서 두 번 깎인다.
+    const overlapping = [...roomOutages.values()].find(
+      (outage) =>
+        outage.hotelId === hotelId &&
+        outage.roomId === roomId &&
+        outage.startDate <= endDate &&
+        outage.endDate >= startDate,
+    );
+    if (overlapping) {
+      throw new OperaApiError(
+        409,
+        { detail: 'OVERLAPPING_OUTAGE' },
+        `객실 ${roomId} 는 ${overlapping.startDate} ~ ${overlapping.endDate} 기간에 이미 사용 불가입니다.`,
+      );
+    }
+
+    // 그 기간에 이 객실로 들어오기로 한 손님이 있으면 먼저 옮겨야 한다.
+    // 등록만 받아 두면 도착 당일에야 알게 된다.
+    const assigned = [...store.values()].find(
+      (reservation) =>
+        reservation.hotelId === hotelId &&
+        reservation.roomStay.roomId === roomId &&
+        !['Cancelled', 'NoShow', 'CheckedOut'].includes(reservation.reservationStatus) &&
+        reservation.roomStay.arrivalDate <= endDate &&
+        addDays(reservation.roomStay.departureDate, -1) >= startDate,
+    );
+    if (assigned) {
+      throw new OperaApiError(
+        409,
+        { detail: 'ROOM_ASSIGNED' },
+        `해당 기간에 예약 ${assigned.confirmationNumber} 가 객실 ${roomId} 에 배정되어 있습니다. 객실을 먼저 변경해 주세요.`,
+      );
+    }
+
+    // 오늘 당장 빼는데 손님이 들어 있으면 막는다. 미래 기간은 그때까지 나가므로 허용한다.
+    if (room.occupied && startDate <= today) {
+      throw new OperaApiError(
+        409,
+        { detail: 'ROOM_OCCUPIED' },
+        `객실 ${roomId} 는 재실 중이라 지금부터 사용 불가로 둘 수 없습니다.`,
+      );
+    }
+
+    const outageId = `OOO-${(outageSequence += 1)}`;
+    const outage: MockRoomOutage = {
+      outageId,
+      hotelId,
+      roomId,
+      kind,
+      startDate,
+      endDate,
+      reason: String(body.reason ?? ''),
+      returnStatus: String(body.returnStatus ?? 'Dirty'),
+    };
+    roomOutages.set(outageId, outage);
+
+    // 기간이 오늘을 포함하면 하우스키핑 상태도 지금 바꾼다. 미래 건은 그대로 둔다 —
+    // 다음 주 공사 때문에 오늘 못 파는 것은 아니다.
+    if (outageCoversDate(outage, today)) {
+      rooms.set(roomId, { ...room, roomStatus: kind });
+    }
+
+    return { ...outage, roomType: room.roomType } as T;
+  }
+
+  const outageMatch = /\/hsk\/v1\/hotels\/[^/]+\/outOfOrders\/([^/]+)$/.exec(path);
+  if (outageMatch && method === 'DELETE') {
+    const outageId = decodeURIComponent(outageMatch[1] ?? '');
+    const outage = roomOutages.get(outageId);
+    if (!outage || outage.hotelId !== hotelId) {
+      throw new OperaApiError(
+        404,
+        { detail: 'NOT_FOUND' },
+        `사용 불가 기록을 찾을 수 없습니다: ${outageId}`,
+      );
+    }
+
+    roomOutages.delete(outageId);
+
+    // 해제하면 객실을 되판다. 다만 청소 여부는 알 수 없으므로 복귀 상태는
+    // 등록할 때 정해 둔 값(대개 Dirty)을 쓴다. Clean 으로 되돌리면 청소하지 않은
+    // 객실이 판매 가능으로 보인다.
+    const room = rooms.get(outage.roomId);
+    const today = businessDates.get(hotelId) ?? dayOffset(0);
+    if (room && outageCoversDate(outage, today)) {
+      rooms.set(outage.roomId, { ...room, roomStatus: outage.returnStatus });
+    }
+
+    return { ...outage, released: true } as T;
   }
 
   // --- 영업일 ------------------------------------------------------------
@@ -832,6 +1057,18 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       }
 
       const roomStay = (body.roomStay ?? {}) as Record<string, unknown>;
+
+      // 객실을 배정하려면 그 기간에 팔 수 있는 객실이어야 한다. 공사 중인 방에
+      // 손님을 넣어 두면 도착 당일에야 알게 된다.
+      if (roomStay.roomId) {
+        assertRoomAssignable(
+          hotelId,
+          String(roomStay.roomId),
+          String(roomStay.arrivalDate ?? existing.roomStay.arrivalDate),
+          String(roomStay.departureDate ?? existing.roomStay.departureDate),
+        );
+      }
+
       const updated: MockReservation = {
         ...existing,
         ...(nextStatus ? { reservationStatus: nextStatus } : {}),
@@ -839,6 +1076,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
           ...existing.roomStay,
           ...(roomStay.arrivalDate ? { arrivalDate: String(roomStay.arrivalDate) } : {}),
           ...(roomStay.departureDate ? { departureDate: String(roomStay.departureDate) } : {}),
+          ...(roomStay.roomId ? { roomId: String(roomStay.roomId) } : {}),
           ...(roomStay.roomType ? { roomType: String(roomStay.roomType) } : {}),
           ...(roomStay.ratePlanCode ? { ratePlanCode: String(roomStay.ratePlanCode) } : {}),
           ...(roomStay.adultCount === undefined ? {} : { adultCount: Number(roomStay.adultCount) }),
@@ -879,9 +1117,11 @@ function addDays(date: string, days: number): string {
 export function resetMockStore(): void {
   store.clear();
   rooms.clear();
+  roomOutages.clear();
   blocks.clear();
   businessDates.clear();
   profiles.clear();
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
+  outageSequence = OUTAGE_SEQUENCE_START;
 }
