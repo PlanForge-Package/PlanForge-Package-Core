@@ -407,6 +407,9 @@ function assertCode(allowed: string[], value: string, label: string): void {
 /** 노쇼로 바꿀 수 있는 출발 상태. 이미 들어온 손님을 안 왔다고 할 수는 없다. */
 const NO_SHOW_FROM = ['Reserved', 'Confirmed', 'Waitlisted'];
 
+/** 체크인할 수 있는 출발 상태. 취소·노쇼된 예약으로 방을 내줄 수는 없다. */
+const CHECK_IN_FROM = ['Reserved', 'Confirmed'];
+
 function assertNoShowAllowed(reservation: MockReservation, businessDate: string): void {
   if (!NO_SHOW_FROM.includes(reservation.reservationStatus)) {
     throw new OperaApiError(
@@ -1037,6 +1040,104 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     rememberProfile(created.guest);
     if (block) applyPickup(block, roomType, arrival, departure);
     return created as T;
+  }
+
+  // --- 체크인 / 체크아웃 --------------------------------------------------
+  const checkInMatch = /\/reservations\/([^/]+)\/checkIn$/.exec(path);
+  if (checkInMatch && method === 'POST') {
+    const id = decodeURIComponent(checkInMatch[1] ?? '');
+    const existing = store.get(id);
+    if (!existing) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+
+    if (!CHECK_IN_FROM.includes(existing.reservationStatus)) {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_STATUS_TRANSITION' },
+        `현재 상태(${existing.reservationStatus})에서는 체크인할 수 없습니다.`,
+      );
+    }
+
+    const businessDate = businessDates.get(hotelId) ?? dayOffset(0);
+    // 도착일 전에 체크인하면 그날 밤 재고가 팔린 것으로 잡히지 않는다.
+    if (existing.roomStay.arrivalDate > businessDate) {
+      throw new OperaApiError(
+        400,
+        { detail: 'ARRIVAL_NOT_DUE' },
+        `도착일(${existing.roomStay.arrivalDate})이 되지 않아 체크인할 수 없습니다.`,
+      );
+    }
+
+    const roomId = String(body.roomId ?? '');
+    if (!roomId) {
+      throw new OperaApiError(
+        400,
+        { detail: 'ROOM_REQUIRED' },
+        '체크인하려면 객실을 배정해야 합니다.',
+      );
+    }
+    assertRoomAssignable(
+      hotelId,
+      roomId,
+      existing.roomStay.arrivalDate,
+      existing.roomStay.departureDate,
+    );
+
+    // 다른 손님이 들어 있는 방에 또 넣을 수는 없다.
+    const takenBy = [...store.values()].find(
+      (r) =>
+        r.reservationId !== id &&
+        r.hotelId === hotelId &&
+        r.reservationStatus === 'InHouse' &&
+        r.roomStay.roomId === roomId,
+    );
+    if (takenBy) {
+      throw new OperaApiError(
+        409,
+        { detail: 'ROOM_OCCUPIED' },
+        `객실 ${roomId} 은 예약 ${takenBy.confirmationNumber} 이 사용 중입니다.`,
+      );
+    }
+
+    const updated: MockReservation = {
+      ...existing,
+      reservationStatus: 'InHouse',
+      roomStay: { ...existing.roomStay, roomId },
+    };
+    store.set(id, updated);
+
+    const room = rooms.get(roomId);
+    if (room) rooms.set(roomId, { ...room, occupied: true });
+
+    return updated as T;
+  }
+
+  const checkOutMatch = /\/reservations\/([^/]+)\/checkOut$/.exec(path);
+  if (checkOutMatch && method === 'POST') {
+    const id = decodeURIComponent(checkOutMatch[1] ?? '');
+    const existing = store.get(id);
+    if (!existing) {
+      throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `예약을 찾을 수 없습니다: ${id}`);
+    }
+
+    if (existing.reservationStatus !== 'InHouse') {
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_STATUS_TRANSITION' },
+        `현재 상태(${existing.reservationStatus})에서는 체크아웃할 수 없습니다.`,
+      );
+    }
+
+    const updated: MockReservation = { ...existing, reservationStatus: 'CheckedOut' };
+    store.set(id, updated);
+
+    // 나간 방은 비고 청소가 필요하다. 청소 완료로 두면 치우지 않은 방이 팔린다.
+    const roomId = existing.roomStay.roomId;
+    const room = roomId ? rooms.get(roomId) : undefined;
+    if (roomId && room) rooms.set(roomId, { ...room, occupied: false, roomStatus: 'Dirty' });
+
+    return updated as T;
   }
 
   // --- 예약 단건 / 수정 / 취소 -------------------------------------------

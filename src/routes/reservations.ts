@@ -12,6 +12,8 @@ import { ErrorResponse } from '../schemas/common.js';
 import { NoShowBody } from '../schemas/night-audit.js';
 import {
   CancelReservationBody,
+  CheckInBody,
+  CheckOutBody,
   CreateReservationBody,
   Reservation,
   ReservationIdParams,
@@ -154,6 +156,68 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
           hotelId: hotel,
           body: { roomStay: toOperaRoomStay(request.body) },
         },
+      );
+
+      return toReservation(raw);
+    },
+  );
+
+  app.post(
+    '/v1/reservations/:reservationId/check-in',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '체크인 — 객실 배정을 OPERA 가 기록합니다',
+        params: ReservationIdParams,
+        body: CheckInBody,
+        response: {
+          200: Reservation,
+          400: ErrorResponse,
+          404: ErrorResponse,
+          409: ErrorResponse,
+          502: ErrorResponse,
+        },
+      },
+    },
+    async (request) => {
+      const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
+
+      /*
+       * 어느 방에 들어갔는지는 재고 그 자체다.
+       *
+       * PlanForge 만 알고 있으면 OPERA 는 그 방을 여전히 빈 방으로 보고 다른
+       * 예약에 배정한다. 그래서 상태 전이와 객실 번호를 함께 넘긴다.
+       */
+      const raw = await operaRequest<OperaReservationPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/checkIn`,
+        {
+          method: 'POST',
+          hotelId: hotel,
+          body: { roomId: request.body.roomNumber },
+        },
+      );
+
+      return toReservation(raw);
+    },
+  );
+
+  app.post(
+    '/v1/reservations/:reservationId/check-out',
+    {
+      schema: {
+        tags: ['reservations'],
+        summary: '체크아웃 — 객실을 비우고 청소 대상으로 돌립니다',
+        params: ReservationIdParams,
+        body: CheckOutBody,
+        response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
+      },
+    },
+    async (request) => {
+      const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
+
+      const raw = await operaRequest<OperaReservationPayload>(
+        `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/checkOut`,
+        { method: 'POST', hotelId: hotel, body: {} },
       );
 
       return toReservation(raw);

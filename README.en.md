@@ -169,6 +169,8 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `PATCH` | `/v1/reservations/:reservationId` | Amend reservation |
 | `POST` | `/v1/reservations/:reservationId/cancel` | Cancel reservation |
 | `POST` | `/v1/reservations/:reservationId/no-show` | Mark no-show |
+| `POST` | `/v1/reservations/:reservationId/check-in` | Check in (with room assignment) |
+| `POST` | `/v1/reservations/:reservationId/check-out` | Check out |
 | `GET` | `/v1/blocks` | Group block list |
 | `GET` | `/v1/blocks/:blockId` | Single block — allotment by date and room type |
 | `GET` | `/v1/blocks/:blockId/reservations` | Rooming list |

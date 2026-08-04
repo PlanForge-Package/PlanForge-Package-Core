@@ -112,9 +112,26 @@ export const CancelReservationBody = Type.Object({
   reason: Type.Optional(Type.String({ maxLength: 200 })),
 });
 
+/**
+ * 체크인.
+ *
+ * 객실 번호를 함께 보낸다. 어느 방에 들어갔는지는 재고 그 자체이므로 OPERA 가
+ * 알아야 한다 — 모르면 그 방을 다른 예약에 다시 배정한다.
+ */
+export const CheckInBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+  roomNumber: Type.String({ minLength: 1 }),
+});
+
+export const CheckOutBody = Type.Object({
+  hotelId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
 export type CreateReservationBody = Static<typeof CreateReservationBody>;
 export type UpdateReservationBody = Static<typeof UpdateReservationBody>;
 export type CancelReservationBody = Static<typeof CancelReservationBody>;
+export type CheckInBody = Static<typeof CheckInBody>;
+export type CheckOutBody = Static<typeof CheckOutBody>;
 
 export type Reservation = Static<typeof Reservation>;
 export type ReservationListQuery = Static<typeof ReservationListQuery>;

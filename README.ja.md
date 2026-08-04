@@ -167,6 +167,8 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `PATCH` | `/v1/reservations/:reservationId` | 予約変更 |
 | `POST` | `/v1/reservations/:reservationId/cancel` | 予約取消 |
 | `POST` | `/v1/reservations/:reservationId/no-show` | ノーショー処理 |
+| `POST` | `/v1/reservations/:reservationId/check-in` | チェックイン（客室割当を含む） |
+| `POST` | `/v1/reservations/:reservationId/check-out` | チェックアウト |
 | `GET` | `/v1/blocks` | 団体ブロック一覧 |
 | `GET` | `/v1/blocks/:blockId` | ブロック単件 —— 日付・客室タイプ別の割当 |
 | `GET` | `/v1/blocks/:blockId/reservations` | ルーミングリスト |

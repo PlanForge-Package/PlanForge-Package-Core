@@ -166,6 +166,8 @@ pnpm dev
 | `PATCH` | `/v1/reservations/:reservationId` | 예약 수정 |
 | `POST` | `/v1/reservations/:reservationId/cancel` | 예약 취소 |
 | `POST` | `/v1/reservations/:reservationId/no-show` | 노쇼 처리 |
+| `POST` | `/v1/reservations/:reservationId/check-in` | 체크인 (객실 배정 포함) |
+| `POST` | `/v1/reservations/:reservationId/check-out` | 체크아웃 |
 | `GET` | `/v1/blocks` | 단체 블록 목록 |
 | `GET` | `/v1/blocks/:blockId` | 블록 단건 — 일자·객실 타입별 할당 |
 | `GET` | `/v1/blocks/:blockId/reservations` | 룸리스트 |

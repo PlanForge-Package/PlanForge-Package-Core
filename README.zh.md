@@ -161,6 +161,8 @@ pnpm dev
 | `PATCH` | `/v1/reservations/:reservationId` | 修改预订 |
 | `POST` | `/v1/reservations/:reservationId/cancel` | 取消预订 |
 | `POST` | `/v1/reservations/:reservationId/no-show` | No-show 处理 |
+| `POST` | `/v1/reservations/:reservationId/check-in` | 入住（含分房） |
+| `POST` | `/v1/reservations/:reservationId/check-out` | 离店 |
 | `GET` | `/v1/blocks` | 团队房控列表 |
 | `GET` | `/v1/blocks/:blockId` | 单个房控 —— 按日期与房型的配额 |
 | `GET` | `/v1/blocks/:blockId/reservations` | 房单 |
