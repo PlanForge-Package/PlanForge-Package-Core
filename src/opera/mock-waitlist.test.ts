@@ -15,7 +15,7 @@ interface Row {
   reservationStatus: string;
 }
 
-/** 스위트는 재고가 4개뿐이라 매진을 만들기 쉽다. */
+/** Suites have only four rooms, so they are easy to sell out. */
 function book(roomType = 'SUIT', waitlist = false, arrival = day(30), departure = day(31)): Row {
   return mockOperaRequest<Row>(RESERVATIONS, {
     method: 'POST',
@@ -58,8 +58,8 @@ beforeEach(() => {
 
 describe('모의 OPERA — 재고 초과 예약', () => {
   /*
-   * 안내와 수락이 갈라지면 화면에 "매진" 이라고 떠 있어도 예약이 만들어진다.
-   * 재고 판단을 OPERA 에 맡긴 의미가 사라진다.
+   * If quoting and accepting diverge, the screen says sold out while the booking
+   * still goes through, which defeats leaving inventory to OPERA.
    */
   it('남은 객실이 없으면 예약을 거절한다', () => {
     fillSuites();
@@ -89,7 +89,7 @@ describe('모의 OPERA — 대기 예약', () => {
     expect(book('SUIT', true).reservationStatus).toBe('Waitlisted');
   });
 
-  // 자리를 차지하지 않고 기다리는 것이 대기다.
+  // Waiting means not holding a room.
   it('대기 예약은 재고를 차지하지 않는다', () => {
     const before = available('SUIT');
     book('SUIT', true);
@@ -101,7 +101,7 @@ describe('모의 OPERA — 대기 예약', () => {
     const filled = fillSuites();
     const waiting = book('SUIT', true);
 
-    // 한 건이 취소되어 자리가 하나 난다.
+    // One cancellation frees a single room.
     mockOperaRequest(`${RESERVATIONS}/${filled[0]!.reservationId}`, {
       method: 'DELETE',
       hotelId: 'SAND01',
@@ -111,8 +111,8 @@ describe('모의 OPERA — 대기 예약', () => {
   });
 
   /*
-   * 대기에 올릴 때 자리가 없었다는 사실은 확정 시점과 무관하다. 그 사이 다른
-   * 대기 건이 먼저 확정됐을 수도 있다.
+   * That nothing was free at waitlist time says nothing about confirmation time.
+   * Another waitlist entry may have been confirmed first.
    */
   it('아직 자리가 없으면 확정하지 못한다', () => {
     fillSuites();
@@ -157,7 +157,7 @@ describe('모의 OPERA — 대기 예약', () => {
 });
 
 describe('모의 OPERA — 사용 불가 객실과 재고', () => {
-  // 공사 중인 객실은 팔 수 없다. 안내와 수락이 같은 계산을 써야 한다.
+  // A room under maintenance cannot be sold. Quoting and accepting share one count.
   it('사용 불가 객실만큼 덜 판다', () => {
     const before = available('SUIT');
 

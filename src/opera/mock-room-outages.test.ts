@@ -98,9 +98,9 @@ describe('모의 OPERA — 사용 불가 객실', () => {
       reason: '도색',
     });
 
-    // 20일 밤은 막히고
+    // The night of the 20th is blocked
     expect(availableFor('STDT', day(20), day(21))).toBe(before - 1);
-    // 21일 밤은 다시 팔린다
+    // and the night of the 21st is sellable again
     expect(availableFor('STDT', day(21), day(22))).toBe(before);
   });
 
@@ -141,7 +141,7 @@ describe('모의 OPERA — 사용 불가 객실', () => {
 
     mockOperaRequest(`${OUTAGES}/${outage.outageId}`, { method: 'DELETE', hotelId: 'SAND01' });
 
-    // 청소 여부를 알 수 없으므로 Clean 이 아니라 Dirty 로 돌아온다.
+    // We cannot know it is clean, so it returns Dirty rather than Clean.
     expect(roomStatus('1101')).toBe('Dirty');
     expect(availableFor('STDT', day(0), day(1))).toBe(before);
     expect(listOutages().some((row) => row.outageId === outage.outageId)).toBe(false);
@@ -278,7 +278,7 @@ describe('모의 OPERA — 사용 불가 객실', () => {
       reason: '도색',
     });
 
-    // 시드 객실 1502 의 공사 기간(-3 ~ +14)도 같은 날에 걸쳐 있다.
+    // Seeded room 1502's outage (-3 to +14) covers the same date.
     expect(listOutages({ onDate: day(11) }).map((row) => row.roomId)).toEqual(['1502', '1101']);
     expect(listOutages({ onDate: day(11), roomId: '1101' }).map((row) => row.roomId)).toEqual([
       '1101',

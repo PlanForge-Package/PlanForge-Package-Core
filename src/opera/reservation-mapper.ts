@@ -2,11 +2,11 @@ import { env } from '../config/env.js';
 import type { Reservation } from '../schemas/reservation.js';
 
 /**
- * OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다.
+ * Declares only the parts of the OHIP response we actually use.
  *
- * 필드 이름은 일반적인 OHIP 규약을 따른 **추정치**다. 실제 구독 스펙을 받으면
- * 이 파일과 mock-transport 를 함께 맞추면 되고, 나머지 코드는 손대지 않아도 된다.
- * 매핑을 한 곳에 모아 둔 이유가 이것이다.
+ * Field names follow common OHIP conventions but are a guess. When the real spec
+ * arrives, fix this file and mock-transport together and nothing else changes.
+ * That is why the mapping lives in one place.
  */
 export interface OperaReservationPayload {
   reservationId?: string;
@@ -26,7 +26,7 @@ export interface OperaReservationPayload {
     total?: { amount?: number; currencyCode?: string };
     blockCode?: string;
   };
-  /** 예약 경로. OPERA 는 roomStay 가 아니라 예약 본문에 둔다. */
+  /** Source of business. OPERA puts it on the reservation, not on roomStay. */
   sourceOfBusiness?: {
     sourceCode?: string;
     marketCode?: string;
@@ -38,7 +38,7 @@ export interface OperaReservationPayload {
     surname?: string;
     email?: string;
   };
-  /** 보증 방식. 노쇼를 어떻게 다룰지가 여기서 갈린다. */
+  /** Guarantee type. It decides how a no-show is handled. */
   guaranteeCode?: string;
   cancellationPenalty?: number;
 }
@@ -80,10 +80,10 @@ export function toReservation(raw: OperaReservationPayload): Reservation {
 }
 
 /**
- * 예약 경로를 OPERA 형태로 바꾼다.
+ * Converts source of business into OPERA's shape.
  *
- * 하나도 지정되지 않았으면 아예 보내지 않는다. 빈 객체를 보내면 OPERA 가 기존
- * 값을 지우는 것으로 읽을 수 있다.
+ * Sends nothing when no field is set. An empty object can read as clearing the
+ * existing values.
  */
 export function toOperaSourceOfBusiness(input: {
   sourceCode?: string;
@@ -98,7 +98,7 @@ export function toOperaSourceOfBusiness(input: {
   return Object.keys(payload).length > 0 ? payload : undefined;
 }
 
-/** PlanForge 요청을 OPERA 가 기대하는 형태로 바꾼다. */
+/** Converts a PlanForge request into the shape OPERA expects. */
 export function toOperaRoomStay(input: {
   arrivalDate?: string;
   departureDate?: string;

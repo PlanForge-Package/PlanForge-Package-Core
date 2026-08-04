@@ -21,15 +21,15 @@ import {
 } from '../schemas/rate-plan.js';
 
 /**
- * 요금 코드와 패키지.
+ * Rate plans and packages.
  *
- * 요금은 OPERA 가 정한다 — 시즌·요일·프로모션·수익관리가 얽힌 결과라 우리가
- * 따로 계산하면 실제로 청구되는 금액과 갈린다. 여기서는 그 설정을 읽고 고칠 뿐,
- * 금액을 매기지 않는다.
+ * OPERA sets prices — seasons, weekdays, promotions and revenue management all
+ * feed in, and computing them ourselves would diverge from what is actually
+ * charged. Here we only read and edit that configuration.
  *
- * 경로는 OHIP 의 규약을 따른 **추정치**다(`/rtp/v1/hotels/{hotelId}/ratePlans`).
- * 구독 스펙을 받으면 이 파일과 모의 전송 계층만 고치면 되도록 매핑을 밖으로
- * 흘리지 않는다.
+ * Paths follow OHIP conventions but are a guess (`/rtp/v1/hotels/{hotelId}/ratePlans`).
+ * The mapping stays inside this file so that only it and the mock transport need
+ * fixing when the spec arrives.
  */
 export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -176,7 +176,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     },
   );
 
-  // --- 패키지 ---------------------------------------------------------------
+  // --- Packages -----------------------------------------------------------
 
   app.get(
     '/v1/packages',
@@ -284,7 +284,7 @@ function toPackage(raw: OperaPackagePayload, fallbackHotelId: string): RatePacka
   };
 }
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaRatePlanPayload {
   ratePlanCode?: string;
   hotelId?: string;

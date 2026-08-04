@@ -11,11 +11,11 @@ interface OperaBusinessDatePayload {
 }
 
 /**
- * 영업일.
+ * Business date.
  *
- * PlanForge 가 자체로 계산하지 않는다. 야간 감사를 언제 돌렸는지는 OPERA 만
- * 알고, 매출과 점유율이 어느 날짜에 붙는지가 그 값으로 정해진다. 우리가 달력
- * 날짜로 대신 쓰면 자정 이후 마감 전에 올린 매출이 하루 밀려 집계된다.
+ * PlanForge does not compute it. Only OPERA knows when the night audit ran, and
+ * that value decides which day revenue and occupancy land on. Substituting the
+ * calendar date shifts postings made after midnight but before close by a day.
  */
 export const nightAuditRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(

@@ -31,7 +31,7 @@ describe('toReservation', () => {
     });
   });
 
-  // OPERA 는 예약 식별자를 단일 필드가 아니라 목록으로 주는 경우가 있다.
+  // OPERA sometimes returns the reservation id as a list rather than a single field.
   it('reservationIdList 가 있으면 그쪽을 우선한다', () => {
     const result = toReservation({
       reservationId: 'IGNORED',
@@ -70,7 +70,7 @@ describe('toOperaRoomStay', () => {
     });
   });
 
-  // 부분 수정에서 넘기지 않은 필드까지 보내면 OPERA 가 기존 값을 덮어쓴다.
+  // Sending fields a partial update did not include makes OPERA overwrite them.
   it('주지 않은 값은 아예 넣지 않는다', () => {
     expect(toOperaRoomStay({ roomTypeCode: 'SUIT' })).toEqual({ roomType: 'SUIT' });
   });

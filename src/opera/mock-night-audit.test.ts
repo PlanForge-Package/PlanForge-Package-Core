@@ -50,7 +50,7 @@ describe('모의 OPERA — 노쇼', () => {
     expect(noShow(id).reservationStatus).toBe('NoShow');
   });
 
-  // 아직 오지 않은 예약을 노쇼로 찍으면 팔 수 있는 재고가 사라진다.
+  // Marking a future arrival as a no-show destroys sellable inventory.
   it('도착일이 오지 않은 예약은 거절한다', () => {
     const id = createReservation(day(5), day(6));
     expect(() => noShow(id)).toThrow(/도착일/);
@@ -62,7 +62,7 @@ describe('모의 OPERA — 노쇼', () => {
     expect(() => noShow(id)).toThrow(/노쇼 처리할 수 없습니다/);
   });
 
-  // 노쇼는 삭제가 아니라 상태 전이다 — 수수료 청구 근거와 예측 이력이 남아야 한다.
+  // A no-show is a status change, not a delete — the fee basis and forecast history stay.
   it('노쇼 후에도 조회된다', () => {
     const id = createReservation(day(-1), day(1));
     noShow(id);

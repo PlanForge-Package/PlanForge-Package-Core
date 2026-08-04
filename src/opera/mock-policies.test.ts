@@ -55,7 +55,7 @@ beforeEach(() => {
 });
 
 describe('모의 OPERA — 보증 방식', () => {
-  // 아무 보증 없이 받은 예약은 18시까지만 잡아 둔다.
+  // An unguaranteed booking is only held until 18:00.
   it('기본은 6PM 이다', () => {
     expect(book().guaranteeCode).toBe('SIXPM');
   });
@@ -105,7 +105,7 @@ describe('모의 OPERA — 취소 위약금', () => {
     expect(result.cancellation.penaltyAmount).toBe(0);
   });
 
-  // BAR 은 도착 30시간 전까지 무료이고 그 뒤에는 1박을 받는다.
+  // BAR is free until 30 hours before arrival, then charges one night.
   it('기한을 넘기면 1박을 물린다', () => {
     const created = book({}, 0);
     const result = policies(created.reservationId);
@@ -134,7 +134,7 @@ describe('모의 OPERA — 취소 위약금', () => {
     expect(policies(corp.reservationId).cancellation.penaltyAmount).toBe(0);
   });
 
-  // 물린 위약금을 폴리오에 달지 않으면 받을 근거가 사라진다.
+  // Without a folio posting there is nothing to collect the penalty against.
   it('취소하면 위약금이 폴리오에 달린다', () => {
     const created = book({}, 0);
     const cancelled = mockOperaRequest<Reservation>(`${RESERVATIONS}/${created.reservationId}`, {
@@ -162,7 +162,7 @@ describe('모의 OPERA — 취소 위약금', () => {
 
     expect(cancelled.cancellationPenalty).toBe(0);
 
-    // 조회는 1번 창구를 열어 주지만, 거래는 하나도 없어야 한다.
+    // Reading opens window 1, but there must be no postings.
     const folios = mockOperaRequest<{ folios: Array<{ postings: unknown[]; balance: number }> }>(
       `/csh/v1/hotels/${HOTEL}/reservations/${created.reservationId}/folios`,
       { hotelId: HOTEL },
@@ -210,7 +210,7 @@ describe('모의 OPERA — 보증금', () => {
     expect(result.deposit.dueDate).toBe(day(3));
   });
 
-  // 도착 전이라 청구는 없지만 그 돈은 이미 우리에게 있다.
+  // No charge yet before arrival, but we already hold the money.
   it('받으면 폴리오에 결제로 올라간다', () => {
     const created = book();
     const folio = mockOperaRequest<{ balance: number; postings: Array<{ type: string }> }>(

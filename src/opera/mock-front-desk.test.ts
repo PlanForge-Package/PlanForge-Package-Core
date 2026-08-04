@@ -151,7 +151,7 @@ describe('모의 OPERA — 체크아웃', () => {
     checkIn(created.reservationId, '1101');
     checkOut(created.reservationId);
 
-    // 청소 완료로 두면 치우지 않은 방이 판매 가능으로 보인다.
+    // Marking it clean would show an uncleaned room as sellable.
     expect(room('1101')).toMatchObject({ occupied: false, roomStatus: 'Dirty' });
   });
 

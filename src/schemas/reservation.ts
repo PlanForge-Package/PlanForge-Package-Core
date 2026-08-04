@@ -28,32 +28,33 @@ export const Reservation = Type.Object({
   children: Type.Optional(Type.Integer()),
   totalAmount: Type.Optional(Type.Number()),
   currency: Type.Optional(Type.String()),
-  /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
+  /** Block code, if this reservation was picked up from a group block. */
   blockCode: Type.Optional(Type.String()),
   /**
-   * 객실을 함께 쓰는 예약들의 묶음.
+   * Reservations that share one room.
    *
-   * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 예약은 둘이지만 객실은
-   * 하나이므로 재고도 하나만 차지한다.
+   * Two guests, one room, separate folios. Two reservations but only one room,
+   * so they consume a single unit of inventory.
    */
   shareGroupId: Type.Optional(Type.String()),
   /**
-   * 보증 방식 — SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP.
+   * Guarantee type — SIXPM, CREDITCARD, DEPOSIT, COMPANY, COMP.
    *
-   * 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다.
+   * It decides what we can charge on a no-show.
    */
   guaranteeCode: Type.Optional(Type.String()),
-  /** 취소하며 물린 위약금. 취소된 예약에만 있다. */
+  /** Penalty charged on cancellation. Present only on cancelled reservations. */
   cancellationPenalty: Type.Optional(Type.Number()),
   /**
-   * 예약이 들어온 경로.
+   * Where the booking came from.
    *
-   * OPERA 는 세 축으로 나눈다. 셋을 하나로 합치면 "OTA 를 통해 들어온 법인 예약"
-   * 같은 조합을 구분할 수 없어 채널별 수익성 판단이 무너진다.
+   * OPERA splits this three ways. Collapsing them loses combinations like
+   * "corporate booking that arrived through an OTA", and channel profitability
+   * stops being answerable.
    *
-   * - source: 예약을 받은 방법 (직접·전화·워크인·OTA·GDS)
-   * - market: 손님의 성격 (개인·법인·단체·레저)
-   * - channel: 구체적인 판매 채널 (BOOKINGCOM·EXPEDIA·WEB …)
+   * - source: how it was taken (direct, phone, walk-in, OTA, GDS)
+   * - market: what kind of guest (transient, corporate, group, leisure)
+   * - channel: the specific seller (BOOKINGCOM, EXPEDIA, WEB …)
    */
   sourceCode: Type.Optional(Type.String()),
   marketCode: Type.Optional(Type.String()),
@@ -90,7 +91,7 @@ export const ReservationIdParams = Type.Object({
   reservationId: Type.String({ minLength: 1 }),
 });
 
-/** 예약 생성. 요금과 재고 판단은 OPERA 가 한다 — 여기서 계산하지 않는다. */
+/** Create a reservation. OPERA decides inventory and price; we do not compute. */
 export const CreateReservationBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
   arrivalDate: DateString,
@@ -99,23 +100,23 @@ export const CreateReservationBody = Type.Object({
   ratePlanCode: Type.Optional(Type.String({ minLength: 1 })),
   adults: Type.Integer({ minimum: 1, maximum: 10 }),
   children: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
-  /** 단체 블록에서 빼는 예약이면 블록 코드를 넘긴다. 픽업으로 잡힌다. */
+  /** Block code when picking up from a group block. OPERA counts it as pickup. */
   blockCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   /**
-   * 자리가 없어도 대기로 받는다.
+   * Take a waitlist booking even when nothing is free.
    *
-   * 대기 예약은 재고를 차지하지 않고, 자리가 나면 확정으로 올린다. 이 값을
-   * 주지 않으면 매진일 때 예약 자체가 거절된다.
+   * A waitlisted reservation holds no inventory and is confirmed when a room opens.
+   * Without this flag, a sold-out request is rejected outright.
    */
   waitlist: Type.Optional(Type.Boolean()),
-  /** 예약 경로. 비우면 OPERA 가 기본값(직접 예약)으로 잡는다. */
+  /** Source of business. Empty lets OPERA default it to a direct booking. */
   sourceCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   marketCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   channelCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
-  /** 보증 방식. 비우면 6PM — 아무 보증 없는 예약은 18시까지만 잡아 둔다. */
+  /** Guarantee type. Empty means 6PM — an unguaranteed booking is held until 18:00. */
   guaranteeCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
   guest: Type.Object({
-    /** 기존 OPERA 프로필이 있으면 넘긴다. 없으면 이름으로 새로 만든다. */
+    /** Pass an existing OPERA profile id. Without one, a profile is created by name. */
     profileId: Type.Optional(Type.String()),
     firstName: Type.String({ minLength: 1 }),
     lastName: Type.String({ minLength: 1 }),
@@ -123,14 +124,14 @@ export const CreateReservationBody = Type.Object({
   }),
 });
 
-/** 예약의 취소 조건과 보증금. 손님에게 알려 줄 값이라 취소 전에 먼저 본다. */
+/** Cancellation terms and deposit. The guest hears this before we cancel. */
 export const ReservationPolicies = Type.Object({
   reservationId: Type.String(),
   guaranteeCode: Type.String(),
   currency: Type.String(),
   cancellation: Type.Object({
     policyName: Type.String(),
-    /** 이 시각까지는 무료로 취소할 수 있다. */
+    /** Cancelling is free until this moment. */
     freeUntil: Type.String(),
     withinFreeWindow: Type.Boolean(),
     penaltyAmount: Type.Number(),
@@ -152,7 +153,7 @@ export const DepositBody = Type.Object({
   amount: Type.Number({ exclusiveMinimum: 0 }),
   description: Type.Optional(Type.String({ maxLength: 200 })),
   transactionCode: Type.Optional(Type.String({ minLength: 1, maxLength: 20 })),
-  /** 같은 보증금을 두 번 받지 않기 위한 전표 번호. */
+  /** Reference that stops the same deposit being taken twice. */
   reference: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
 });
 
@@ -170,10 +171,10 @@ export const CancelReservationBody = Type.Object({
 });
 
 /**
- * 체크인.
+ * Check-in.
  *
- * 객실 번호를 함께 보낸다. 어느 방에 들어갔는지는 재고 그 자체이므로 OPERA 가
- * 알아야 한다 — 모르면 그 방을 다른 예약에 다시 배정한다.
+ * Carries the room number. Which room the guest walked into is inventory itself,
+ * and OPERA has to know — otherwise it assigns that room to someone else.
  */
 export const CheckInBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
@@ -186,7 +187,7 @@ export const CheckOutBody = Type.Object({
 
 export const ShareReservationBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
-  /** 함께 묶을 상대 예약 */
+  /** The reservation to share with. */
   withReservationId: Type.String({ minLength: 1 }),
 });
 
@@ -199,7 +200,7 @@ export const UnshareBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
 });
 
-/** 대기 확정. 확정 시점에 재고를 다시 확인하므로 몸체는 비어 있다. */
+/** Waitlist confirmation. Availability is re-checked then, so the body is empty. */
 export const ConfirmWaitlistBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
 });

@@ -7,7 +7,7 @@ export interface OperaRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
-  /** 호텔 코드. 생략하면 OHIP_HOTEL_ID 를 쓴다. */
+  /** Hotel code. Falls back to OHIP_HOTEL_ID. */
   hotelId?: string;
 }
 
@@ -22,13 +22,13 @@ function buildUrl(path: string, query: OperaRequestOptions['query']): URL {
 }
 
 /**
- * OHIP REST 호출 래퍼.
+ * OHIP REST call wrapper.
  *
- * 401 을 받으면 토큰을 한 번만 재발급해 재시도한다. 그 외 오류는 그대로 올린다 —
- * 재시도 정책은 호출자(BE)가 결정한다.
+ * On 401 it reissues the token once and retries. Other errors propagate — the
+ * caller (BE) owns the retry policy.
  */
 export async function operaRequest<T>(path: string, options: OperaRequestOptions = {}): Promise<T> {
-  // 모의 모드는 전송 계층만 대체한다. 호출부와 응답 매핑은 live 와 동일하게 돈다.
+  // Mock mode replaces only the transport. Callers and mapping run as they do live.
   if (env.ohip.mode === 'mock') {
     return mockOperaRequest<T>(path, options);
   }

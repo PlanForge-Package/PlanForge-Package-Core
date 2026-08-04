@@ -24,13 +24,13 @@ function toProfile(raw: OperaProfilePayload): OperaProfile {
 }
 
 /**
- * 게스트 프로필.
+ * Guest profiles.
  *
- * 조회와 병합만 연다. 이름·연락처 수정은 OPERA 화면에서 하는 편이 낫고, 선호
- * 사항·내부 메모는 PlanForge 가 소유하므로 여기로 보낼 것이 없다.
+ * Read and merge only. Names and contact details are better edited in OPERA, and
+ * preferences and internal notes belong to PlanForge, so there is nothing to send.
  *
- * 병합을 위임하는 이유: 로컬에서만 합치면 OPERA 에는 여전히 프로필이 둘이고,
- * 다음 동기화가 지운 쪽을 되살린다.
+ * Merging is delegated because merging locally leaves two profiles in OPERA, and
+ * the next sync brings the deleted one back.
  */
 export const profileRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(

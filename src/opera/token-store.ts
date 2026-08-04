@@ -8,10 +8,10 @@ interface TokenResponse {
 }
 
 /**
- * OHIP OAuth2 액세스 토큰 캐시.
+ * OHIP OAuth2 access token cache.
  *
- * OHIP 는 password grant 로 토큰을 발급하고 수명이 짧다. 매 요청마다 발급하면
- * 레이트리밋에 걸리므로, 만료 직전까지 재사용하고 동시 갱신은 한 번으로 합친다.
+ * OHIP issues short-lived tokens via password grant. Requesting one per call hits
+ * the rate limit, so we reuse until just before expiry and collapse concurrent refreshes.
  */
 export class TokenStore {
   #token: string | null = null;
@@ -24,7 +24,7 @@ export class TokenStore {
       return this.#token;
     }
 
-    // 동시에 여러 요청이 만료를 감지해도 갱신은 한 번만 수행한다.
+    // Several requests may notice expiry at once; refresh runs only once.
     this.#inFlight ??= this.#fetchToken().finally(() => {
       this.#inFlight = null;
     });
@@ -32,7 +32,7 @@ export class TokenStore {
     return this.#inFlight;
   }
 
-  /** 401 을 받았을 때 캐시를 버리고 다음 호출에서 강제 재발급하도록 한다. */
+  /** Drops the cache after a 401 so the next call forces a reissue. */
   invalidate(): void {
     this.#token = null;
     this.#expiresAt = 0;

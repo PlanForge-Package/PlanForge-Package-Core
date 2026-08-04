@@ -7,7 +7,7 @@ beforeEach(() => {
   resetMockStore();
 });
 
-/** 요일이 정해진 날짜를 찾는다. 주말 시즌 검증은 실행 날짜에 흔들리면 안 된다. */
+/** Finds a date on a given weekday. Weekend season checks must not depend on today. */
 function nextDayOfWeek(day: number, from = 30): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + from);
@@ -95,7 +95,7 @@ describe('모의 OPERA — 요금 코드', () => {
     ).toThrow(/이미 쓰고 있는 요금 코드/);
   });
 
-  // 팔 수 없는 요금을 만들어 두면 예약 화면에 금액 없는 선택지가 생긴다.
+  // An unsellable rate puts a priceless option on the booking screen.
   it('기준 요금이 하나도 없으면 거절한다', () => {
     expect(() =>
       mockOperaRequest(`/rtp/v1/hotels/${HOTEL}/ratePlans`, {
@@ -204,7 +204,7 @@ describe('모의 OPERA — 시즌 요금', () => {
     expect(offers[0]?.nightlyRates[0]?.amount).toBe(999000);
   });
 
-  // 겹치도록 두면 무엇이 이기는지가 등록 순서에 달린다.
+  // Overlapping seasons make the winner depend on insert order.
   it('기간이 겹치는 시즌은 거절한다', () => {
     const body = {
       name: '겹침',
@@ -346,7 +346,7 @@ describe('모의 OPERA — 패키지', () => {
       adults: 2,
     });
 
-    // 조식 25,000 × 1인 → 2인이면 25,000 이 더 붙는다.
+    // Breakfast 25,000 per person, so two guests add another 25,000.
     expect(one[0]?.total.amount).toBe(160000 + 25000);
     expect(two[0]?.total.amount).toBe(160000 + 50000);
   });
@@ -506,7 +506,7 @@ describe('모의 OPERA — 요금과 예약', () => {
     ).toThrow(/팔지 않습니다/);
   });
 
-  // 중지한 요금이 재고 안내에 남아 있으면 팔 수 없는 값을 보여 준다.
+  // An inactive rate left in availability quotes a price we cannot sell.
   it('중지된 요금은 조회에 나오지 않는다', () => {
     mockOperaRequest(`/rtp/v1/hotels/${HOTEL}/ratePlans/CORP`, {
       method: 'PATCH',

@@ -29,7 +29,7 @@ import {
   UpdateReservationBody,
 } from '../schemas/reservation.js';
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaPoliciesPayload {
   reservationId?: string;
   guaranteeCode?: string;
@@ -44,11 +44,11 @@ interface OperaPoliciesPayload {
 }
 
 /**
- * 예약은 OPERA 가 기록의 원천이다.
+ * OPERA is the system of record for reservations.
  *
- * 재고 확인·요금 계산·확인 번호 발급을 여기서 하지 않는다. 두 시스템이 각자
- * 계산하면 언젠가 값이 갈리고, 그때 어느 쪽이 맞는지 판단할 근거가 없다.
- * Core 는 형태만 바꿔 넘기고 결과를 그대로 돌려준다.
+ * We do not check inventory, price stays or issue confirmation numbers here. Two
+ * systems computing the same thing eventually disagree, and then there is no
+ * basis for deciding which is right. Core reshapes and forwards.
  */
 export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -129,7 +129,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
         response: {
           201: Reservation,
           400: ErrorResponse,
-          // 매진이면 거절한다. 대기로 받으려면 waitlist 로 다시 요청한다.
+          // Sold out is a rejection. Send waitlist to take the booking anyway.
           409: ErrorResponse,
           502: ErrorResponse,
         },
@@ -191,10 +191,10 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
   );
 
   /**
-   * 취소 조건과 보증금.
+   * Cancellation terms and deposit.
    *
-   * 취소하기 전에 손님에게 알려야 하는 값이다. 물리고 나서 통보하면 그건 통보가
-   * 아니라 사후 정산이다.
+   * The guest has to hear this before we cancel. Telling them afterwards is not
+   * notice, it is a bill.
    */
   app.get(
     '/v1/reservations/:reservationId/policies',
@@ -282,10 +282,10 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
 
       /*
-       * 어느 방에 들어갔는지는 재고 그 자체다.
+       * Which room they walked into is inventory itself.
        *
-       * PlanForge 만 알고 있으면 OPERA 는 그 방을 여전히 빈 방으로 보고 다른
-       * 예약에 배정한다. 그래서 상태 전이와 객실 번호를 함께 넘긴다.
+       * If only PlanForge knows, OPERA still sees the room as free and assigns it
+       * to someone else. So the status change carries the room number.
        */
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/checkIn`,
@@ -406,10 +406,10 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const hotel = request.body.hotelId ?? env.ohip.defaultHotelId;
 
       /*
-       * 대기에 올릴 때 자리가 없었다는 사실은 지금과 무관하다.
+       * That nothing was free when it was waitlisted says nothing about now.
        *
-       * 자리가 났는지는 확정하는 순간 세어 봐야 알고, 그 사이 다른 대기 건이
-       * 먼저 확정됐을 수도 있다. 그 판단을 OPERA 가 한다.
+       * Only a count at confirmation time answers it, and another waitlist entry
+       * may have taken the room first. OPERA makes that call.
        */
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}/confirmWaitlist`,
@@ -434,8 +434,8 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     async (request) => {
       const hotel = env.ohip.defaultHotelId;
 
-      // 노쇼도 취소와 마찬가지로 상태 전이다. 삭제하면 노쇼 수수료를 청구할
-      // 근거와 다음 시즌 예측에 쓸 이력이 함께 사라진다.
+      // A no-show is a status change like a cancellation. Deleting it removes both
+      // the basis for the fee and the history next season's forecast needs.
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}`,
         {
@@ -466,7 +466,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     async (request) => {
       const hotel = env.ohip.defaultHotelId;
 
-      // OPERA 는 취소를 삭제가 아니라 상태 전이로 다룬다. 이력이 남아야 하기 때문이다.
+      // OPERA treats cancellation as a status change, not a delete, to keep history.
       const raw = await operaRequest<OperaReservationPayload>(
         `/rsv/v1/hotels/${hotel}/reservations/${encodeURIComponent(request.params.reservationId)}`,
         {

@@ -11,14 +11,14 @@ import {
 } from '../schemas/housekeeping.js';
 
 /**
- * 하우스키핑 — 객실 상태.
+ * Housekeeping — room status.
  *
- * 객실 상태는 호텔의 기록이므로 OPERA 가 원천이다. 프론트데스크의 재고 판단과
- * 하우스키핑의 청소 상태가 같은 값을 봐야 하는데, PlanForge 가 따로 들고 있으면
- * 체크인 가능 여부가 두 시스템에서 달라진다.
+ * Room status is the hotel's record, so OPERA owns it. The front desk's
+ * availability view and housekeeping's cleaning view must read the same value;
+ * keeping our own copy makes check-in eligibility differ between systems.
  *
- * 반면 "누가 어느 객실을 청소하는가" 는 직원 근무 편성이라 OPERA 에 보내지 않는다.
- * BE 가 자체 관리한다.
+ * Who cleans which room is staff scheduling, so it never goes to OPERA.
+ * The BE manages that itself.
  */
 export const housekeepingRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -89,7 +89,7 @@ function toRoomStatus(raw: OperaRoomStatusPayload) {
   };
 }
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaRoomStatusPayload {
   hotelId?: string;
   roomId?: string;

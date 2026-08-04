@@ -12,13 +12,13 @@ import {
 } from '../schemas/transaction-code.js';
 
 /**
- * 거래 코드.
+ * Transaction codes.
  *
- * 회계 분개의 기준이다 — 올라간 금액이 객실 매출인지 식음 매출인지, 세금이
- * 어떻게 붙는지가 이 설정에 달려 있다. 원장이 OPERA 에 있으니 그 분류도
- * OPERA 가 원천이다.
+ * The basis for the closing journal — whether an amount is room or F&B revenue,
+ * and how tax applies, comes from this configuration. The ledger lives in OPERA,
+ * so its classification does too.
  *
- * 경로는 OHIP 규약을 따른 **추정치**다(`/csh/v1/hotels/{hotelId}/transactionCodes`).
+ * Paths follow OHIP conventions but are a guess (`/csh/v1/hotels/{hotelId}/transactionCodes`).
  */
 export const transactionCodeRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -119,7 +119,7 @@ function toCode(raw: OperaTransactionCodePayload, fallbackHotelId: string): Tran
   };
 }
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaTransactionCodePayload {
   transactionCode?: string;
   hotelId?: string;

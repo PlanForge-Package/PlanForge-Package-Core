@@ -35,7 +35,7 @@ describe('모의 OPERA — 예약 생성', () => {
     expect(created.confirmationNumber).toMatch(/^OP/);
   });
 
-  // 시퀀스가 시드 번호와 겹치면 새 예약이 시드 예약을 덮어써 재고와 목록이 어긋난다.
+  // A sequence overlapping the seeds lets a new reservation overwrite a seeded one.
   it('시드 예약 번호를 덮어쓰지 않는다', () => {
     const before = mockOperaRequest<{ totalResults: number }>(
       '/rsv/v1/hotels/SAND01/reservations',
@@ -62,7 +62,7 @@ describe('모의 OPERA — 예약 생성', () => {
     expect(after.totalResults).toBe(before.totalResults + 1);
   });
 
-  // 안내와 청구가 갈리면 손님이 본 금액과 폴리오에 달리는 금액이 달라진다.
+  // If quoting and charging diverge, the guest sees one amount and the folio another.
   it('총액이 요금 조회와 같다', () => {
     const arrival = tomorrow(1);
     const departure = tomorrow(3);
@@ -164,7 +164,7 @@ describe('모의 OPERA — 수정·취소', () => {
 
     expect(updated.roomStay.roomType).toBe('SUIT');
     expect(updated.roomStay.total.amount).toBe(quoted.ratePlans[0]?.total.amount);
-    // 스탠다드에서 스위트로 올렸으니 금액도 올라야 한다.
+    // Standard to suite, so the amount must go up.
     expect(updated.roomStay.total.amount).toBeGreaterThan(before.roomStay.total.amount);
   });
 
@@ -176,7 +176,7 @@ describe('모의 OPERA — 수정·취소', () => {
     );
     expect(cancelled.reservationStatus).toBe('Cancelled');
 
-    // 취소 후에도 조회된다 — 이력이 남아야 하기 때문이다.
+    // Still readable after cancellation — the history has to stay.
     const fetched = mockOperaRequest<{ reservationStatus: string }>(
       `/rsv/v1/hotels/SAND01/reservations/${id}`,
       { hotelId: 'SAND01' },
@@ -231,7 +231,7 @@ describe('모의 OPERA — 재고', () => {
       '/par/v1/hotels/SAND01/availability',
       { hotelId: 'SAND01', query: { startDate: tomorrow(1), endDate: tomorrow(2) } },
     );
-    // 스위트 재고 4개 중 1502 는 시드에서 공사 중(OutOfOrder)이라 팔 수 없다.
+    // Of the four suites, seeded 1502 is out of order and cannot be sold.
     expect(result.roomStays.find((r) => r.roomType === 'SUIT')?.available).toBe(3);
   });
 });
@@ -252,7 +252,7 @@ describe('모의 OPERA — 요금', () => {
 
     const deluxe = result.ratePlans.find((p) => p.roomType === 'DLXK');
     expect(deluxe?.nightlyRates).toHaveLength(3);
-    // 총액은 일자별 단가의 합이다. 따로 계산하면 시즌이 붙는 순간 갈린다.
+    // The total is the sum of nightly amounts. Computing it separately diverges once seasons apply.
     const summed = (deluxe?.nightlyRates ?? []).reduce(
       (sum, night) => sum + night.amount + night.packageAmount,
       0,

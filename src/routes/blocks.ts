@@ -19,11 +19,11 @@ import { ErrorResponse } from '../schemas/common.js';
 import { ReservationListResponse } from '../schemas/reservation.js';
 
 /**
- * 단체 블록.
+ * Group blocks.
  *
- * 블록은 재고를 미리 잡아 두는 장치라 일반 예약과 같은 재고 풀을 건드린다.
- * PlanForge 가 따로 계산하면 일반 판매와 단체 할당이 서로 다른 재고를 보게 되어
- * 오버북이 난다. 그래서 여기서도 OPERA 에 맡긴다.
+ * A block holds inventory up front, so it draws on the same pool as normal
+ * bookings. If PlanForge counted separately, transient sales and group
+ * allotments would see different inventory and oversell. OPERA owns it.
  */
 export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -87,8 +87,8 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     async (request) => {
       const hotel = env.ohip.defaultHotelId;
 
-      // 블록을 먼저 읽는 이유는 코드가 필요해서다. OPERA 예약 조회는 블록 ID 가
-      // 아니라 블록 코드로 건다. 없는 블록이면 여기서 404 가 난다.
+      // We read the block first because we need its code: OPERA filters reservations
+      // by block code, not id. An unknown block 404s here.
       const block = await operaRequest<OperaBlockPayload>(
         `/blk/v1/hotels/${hotel}/blocks/${encodeURIComponent(request.params.blockId)}`,
         { hotelId: hotel },
@@ -136,7 +136,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
             roomType: slot.roomTypeCode,
             roomsBlocked: slot.blocked,
             ...(slot.ratePlanCode ? { ratePlanCode: slot.ratePlanCode } : {}),
-            // 협의 요금. 넣지 않으면 요금 코드가 정한 값으로 판다.
+            // Negotiated amount. Without one, the rate plan sets the price.
             ...(slot.amount === undefined ? {} : { amount: slot.amount }),
           })),
         },

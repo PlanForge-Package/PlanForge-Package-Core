@@ -12,15 +12,15 @@ import {
 } from '../schemas/room-outage.js';
 
 /**
- * 사용 불가 객실.
+ * Room outages.
  *
- * 객실을 며칠 동안 팔지 않겠다는 결정은 재고 그 자체이므로 OPERA 가 원천이다.
- * PlanForge 가 따로 들고 있으면 OPERA 로 들어온 예약이 공사 중인 객실에
- * 배정된다.
+ * Deciding not to sell a room for a few days is inventory, so OPERA owns it.
+ * Keeping it only in PlanForge lets a booking that arrives through OPERA land in
+ * a room under maintenance.
  *
- * 경로는 OHIP 의 일반적인 규약을 따른 **추정치**다(`/hsk/v1/.../outOfOrders`).
- * 구독 스펙을 받으면 이 파일의 경로와 아래 매핑을 함께 맞춘다. 그때 손댈 곳이
- * 여기와 모의 전송 계층뿐이도록 매핑을 밖으로 흘리지 않는다.
+ * Paths follow common OHIP conventions but are a guess (`/hsk/v1/.../outOfOrders`).
+ * When the spec arrives, fix the paths and the mapping below together. The mapping
+ * stays here so this file and the mock transport are the only places to touch.
  */
 export const roomOutageRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -77,7 +77,7 @@ export const roomOutageRoutes: FastifyPluginAsyncTypebox = async (app) => {
           startDate,
           endDate,
           reason,
-          // 복귀 상태를 정하지 않으면 Dirty 다. 공사가 끝난 객실은 청소가 필요하다.
+          // Default return status is Dirty: a room out of maintenance needs cleaning.
           returnStatus: returnStatus ?? 'Dirty',
         },
       });
@@ -128,7 +128,7 @@ function toOutage(raw: OperaOutagePayload, fallbackHotelId: string) {
   };
 }
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaOutagePayload {
   outageId?: string;
   hotelId?: string;

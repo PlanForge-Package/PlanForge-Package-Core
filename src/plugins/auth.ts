@@ -3,8 +3,8 @@ import fp from 'fastify-plugin';
 import { env } from '../config/env.js';
 
 /**
- * 내부 서비스 인증. BE 만 Core 를 호출한다는 전제이므로 공유 API 키로 충분하다.
- * `/health` 와 문서 경로는 예외.
+ * Internal service auth. Only the BE calls Core, so a shared API key is enough.
+ * `/health` and the docs paths are exempt.
  */
 const PUBLIC_PREFIXES = ['/health', '/docs', '/openapi.json'];
 

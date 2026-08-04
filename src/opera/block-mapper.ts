@@ -2,10 +2,10 @@ import { env } from '../config/env.js';
 import type { Block } from '../schemas/block.js';
 
 /**
- * OHIP 블록 응답에서 실제로 쓰는 부분만 좁게 선언한다.
+ * Declares only the parts of the OHIP block response we actually use.
  *
- * 필드 이름은 일반적인 OHIP 규약을 따른 **추정치**다. 실제 구독 스펙을 받으면
- * 이 파일과 mock-transport 를 함께 맞추면 되고 나머지 코드는 손대지 않아도 된다.
+ * Field names follow common OHIP conventions but are a guess. When the real spec
+ * arrives, fix this file and mock-transport together; nothing else needs to change.
  */
 export interface OperaBlockPayload {
   blockId?: string;
@@ -54,7 +54,7 @@ export function toBlock(raw: OperaBlockPayload): Block {
     cutoffDate: raw.cutoffDate,
     currency: raw.currencyCode,
     allotments,
-    // 합계는 화면마다 다시 세지 않도록 여기서 한 번만 계산한다.
+    // Totals are computed once here so each screen does not re-sum them.
     totalBlocked: allotments.reduce((sum, slot) => sum + slot.blocked, 0),
     totalPickedUp: allotments.reduce((sum, slot) => sum + slot.pickedUp, 0),
   };

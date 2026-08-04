@@ -1,7 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { DateString, HotelIdQuery } from './common.js';
 
-/** 객실 타입 → 금액. 여기 없는 객실 타입은 그 요금으로 팔지 않는다. */
+/** Room type to amount. A room type missing here is not sold on that rate. */
 export const AmountsByRoomType = Type.Record(Type.String(), Type.Number());
 
 export const RateSeason = Type.Object({
@@ -9,7 +9,7 @@ export const RateSeason = Type.Object({
   name: Type.String(),
   startDate: Type.String(),
   endDate: Type.String(),
-  /** 0=일요일. 비우면 기간 내 매일 적용한다. */
+  /** 0 = Sunday. Empty applies to every day in the range. */
   daysOfWeek: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 6 }))),
   amounts: AmountsByRoomType,
 });
@@ -92,10 +92,10 @@ export const RatePackage = Type.Object({
   hotelId: Type.String(),
   name: Type.String(),
   amount: Type.Number(),
-  /** PerNight = 1박당, PerStay = 투숙당 1회, PerPerson = 1인 1박당. */
+  /** PerNight, PerStay (once), or PerPerson (per person per night). */
   calculation: Type.String(),
   transactionCode: Type.String(),
-  /** 요금에 포함이면 총액이 늘지 않는다. 아니면 더한다. */
+  /** Included in the rate leaves the total unchanged; otherwise it is added. */
   includedInRate: Type.Boolean(),
 });
 

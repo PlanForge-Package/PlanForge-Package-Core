@@ -2,14 +2,14 @@ import { OperaApiError } from './errors.js';
 import type { OperaRequestOptions } from './client.js';
 
 /**
- * OHIP 모의 전송 계층.
+ * Mock OHIP transport.
  *
- * 구독 스펙과 자격 증명이 없어도 FE·BE 까지 전 구간을 개발·검증하기 위해 둔다.
- * 여기서 돌려주는 것은 **OPERA 형태의 원본 응답**이고, 라우트의 매핑 코드는
- * live 와 똑같이 태운다. 나중에 실제 연동으로 바꿀 때 달라지는 것은 전송 계층뿐이다.
+ * Lets us build and verify FE and BE end to end without a subscription spec or
+ * credentials. It returns OPERA-shaped raw responses, so the route mappers run
+ * exactly as they will against live. Only this layer changes when we cut over.
  *
- * 주의: 여기 담긴 필드 이름은 일반적인 OHIP 규약을 따른 **추정치**다. 실제 구독
- * 스펙을 받으면 이 파일과 라우트의 매핑을 함께 맞춰야 한다.
+ * Field names here follow common OHIP conventions but are a guess. When the real
+ * spec arrives, fix this file and the route mappers together.
  */
 
 interface MockReservation {
@@ -26,47 +26,47 @@ interface MockReservation {
     adultCount: number;
     childCount: number;
     total?: { amount: number; currencyCode: string };
-    /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
+    /** Block code, if this reservation was picked up from a group block. */
     blockCode?: string;
     /**
-     * 객실을 함께 쓰는 예약들의 묶음.
+     * Reservations that share one room.
      *
-     * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 예약은 둘이지만
-     * 객실은 하나이므로 재고도 하나만 차지한다.
+     * Two guests, one room, separate folios. Two reservations but only one room,
+     * so they consume a single unit of inventory.
      */
     shareGroupId?: string;
   };
   guest: { profileId: string; givenName: string; surname: string; email?: string };
   sourceOfBusiness: { sourceCode: string; marketCode: string; channelCode?: string };
   /**
-   * 보증 방식.
+   * Guarantee type.
    *
-   * 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다. 6PM 은 18시까지만
-   * 잡아 두고 그 뒤에는 팔아도 되지만, 카드 보증은 노쇼 요금을 물릴 수 있다.
+   * Decides what we can charge on a no-show. 6PM only holds the room until 18:00;
+   * a card guarantee lets us post a no-show fee.
    */
   guaranteeCode?: string;
-  /** 취소 시 물린 위약금. 취소된 예약에만 있다. */
+  /** Penalty charged on cancellation. Present only on cancelled reservations. */
   cancellationPenalty?: number;
 }
 
 /**
- * OPERA 가 아는 예약 경로 코드.
+ * Source-of-business codes OPERA knows.
  *
- * 실제로는 호텔마다 설정에서 정하지만, 아무 문자열이나 받으면 오타가 그대로
- * 집계에 들어가 "BOOKINGCOM" 과 "BOOKING.COM" 이 다른 채널이 된다.
+ * Real hotels configure these, but accepting any string lets a typo into the
+ * reports, where BOOKINGCOM and BOOKING.COM become two different channels.
  */
 const SOURCE_CODES = ['DIRECT', 'PHONE', 'WALKIN', 'OTA', 'GDS', 'CORPORATE'];
 const MARKET_CODES = ['TRANSIENT', 'CORPORATE', 'GROUP', 'LEISURE', 'GOVERNMENT'];
 const CHANNEL_CODES = ['WEB', 'MOBILE', 'BOOKINGCOM', 'EXPEDIA', 'AGODA', 'YANOLJA', 'FRONTDESK'];
 
-/** 모의 저장소. 프로세스가 살아 있는 동안만 유지된다. */
+/** Mock store. Lives only as long as the process. */
 const store = new Map<string, MockReservation>();
 
 /**
- * 새 예약 번호의 시작점.
+ * Where new reservation ids start.
  *
- * 시드가 쓰는 1001·1002 보다 위에서 시작해야 한다. 겹치면 새로 만든 예약이
- * 시드 예약을 덮어써 재고 계산과 목록이 조용히 어긋난다.
+ * Must sit above the seeded 1001/1002. Overlapping ids let a new reservation
+ * overwrite a seeded one, and inventory and lists drift apart silently.
  */
 const SEQUENCE_START = 2000;
 let sequence = SEQUENCE_START;
@@ -141,10 +141,10 @@ function dayOffset(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** OPERA 가 허용하는 객실 상태. */
+/** Room statuses OPERA accepts. */
 const ROOM_STATUSES = ['Clean', 'Dirty', 'Inspected', 'OutOfOrder', 'OutOfService'];
 
-/** 객실 타입별 기준 요금. 실제로는 OPERA 의 요금 엔진이 정한다. */
+/** Base rate per room type. Real pricing comes from OPERA's rate engine. */
 const RATES: Record<string, number> = { STDT: 190000, DLXK: 240000, SUIT: 400000 };
 const ROOM_TYPE_NAMES: Record<string, string> = {
   STDT: 'Standard Twin',
@@ -158,50 +158,50 @@ function nights(arrival: string, departure: string): number {
   return Math.max(1, Math.round((to - from) / 86_400_000));
 }
 
-// --- 요금 엔진 -------------------------------------------------------------
+// --- Rate engine -----------------------------------------------------------
 
 /**
- * 기간과 요일에 따라 기준 요금을 덮어쓴다.
+ * Overrides the base rate by date range and weekday.
  *
- * 성수기·주말은 같은 객실이라도 값이 다르다. 총액만 주고받으면 어느 날이 왜
- * 비싼지 설명할 수 없어, 하루 단위로 계산해 내려준다.
+ * High season and weekends cost more for the same room. A total alone cannot
+ * explain why a night is expensive, so we price day by day.
  */
 interface MockRateSeason {
   seasonId: string;
   name: string;
   startDate: string;
   endDate: string;
-  /** 0=일요일. 비우면 기간 내 매일. */
+  /** 0 = Sunday. Empty means every day in the range. */
   daysOfWeek?: number[];
   amounts: Record<string, number>;
 }
 
 /**
- * 취소 규정.
+ * Cancellation policy.
  *
- * 언제까지 무료로 취소할 수 있고 그 뒤에는 얼마를 받는지. 손님에게 미리 알린
- * 조건이라 요금에 붙는다 — 같은 방이라도 싸게 판 요금은 취소가 더 빡빡하다.
+ * How long cancelling is free and what it costs after that. The guest was told
+ * this up front, so it belongs to the rate — a cheaper rate cancels harder.
  */
 interface MockCancellationPolicy {
   name: string;
-  /** 도착일 기준 몇 시간 전까지 무료인지. 0 이면 당일 취소도 무료다. */
+  /** Hours before arrival that cancelling is still free. 0 means same-day is free. */
   freeUntilHoursBeforeArrival: number;
-  /** None = 없음, FirstNight = 1박, FullStay = 전액, Percent, Fixed. */
+  /** None, FirstNight, FullStay, Percent, Fixed. */
   penaltyType: string;
-  /** Percent 면 비율(0.5 = 50%), Fixed 면 금액. 나머지 유형에서는 쓰지 않는다. */
+  /** Ratio for Percent (0.5 = 50%), amount for Fixed. Unused otherwise. */
   penaltyValue: number;
 }
 
 /**
- * 보증금 규정.
+ * Deposit policy.
  *
- * 예약을 잡아 두려고 미리 받는 돈이다. 이것이 없으면 노쇼가 그대로 손실이 된다.
+ * Money taken up front to hold the booking. Without it a no-show is a pure loss.
  */
 interface MockDepositPolicy {
-  /** None = 없음, FirstNight = 1박, Percent = 총액 비율, Fixed = 정액. */
+  /** None, FirstNight, Percent of total, Fixed amount. */
   type: string;
   value: number;
-  /** 도착 며칠 전까지 받아야 하는지. */
+  /** How many days before arrival it is due. */
   dueDaysBeforeArrival: number;
 }
 
@@ -212,10 +212,10 @@ interface MockRatePlan {
   description?: string;
   currencyCode: string;
   marketCode: string;
-  /** 판매 기간. 이 밖의 날짜는 이 요금으로 팔지 않는다. */
+  /** Sell window. Dates outside it cannot be sold on this rate. */
   sellStartDate: string;
   sellEndDate: string;
-  /** 객실 타입별 기준 요금. 여기 없는 객실 타입은 이 요금으로 팔지 않는다. */
+  /** Base amount per room type. A room type missing here is not sold on this rate. */
   baseAmounts: Record<string, number>;
   seasons: MockRateSeason[];
   packageCodes: string[];
@@ -225,17 +225,17 @@ interface MockRatePlan {
 }
 
 /**
- * 요금에 딸려 붙는 부가 상품.
+ * Add-on sold with the rate.
  *
- * `includedInRate` 면 요금 안에 이미 들어 있어 총액이 늘지 않는다 — 조식 포함
- * 요금이 그렇다. 아니면 총액에 더한다. 이 구분을 놓치면 조식값을 두 번 받는다.
+ * `includedInRate` means it is already inside the rate, so the total does not
+ * grow. Miss that and breakfast gets charged twice.
  */
 interface MockPackage {
   packageCode: string;
   hotelId: string;
   name: string;
   amount: number;
-  /** PerNight = 1박당, PerStay = 투숙당 1회, PerPerson = 1인 1박당. */
+  /** PerNight, PerStay (once), or PerPerson (per person per night). */
   calculation: string;
   transactionCode: string;
   includedInRate: boolean;
@@ -246,26 +246,26 @@ const packages = new Map<string, MockPackage>();
 let seasonSequence = 0;
 
 /**
- * 거래 코드.
+ * Transaction code.
  *
- * 회계 분개의 기준이다. 어떤 매출 그룹으로 잡히고 세금이 어떻게 붙는지가 여기
- * 달려 있어, 설정 없는 코드로 올라간 금액은 마감에서 어디로 보낼지 알 수 없다.
+ * The basis for the closing journal. It decides which revenue group an amount
+ * lands in and how tax applies; an unconfigured code cannot be classified.
  *
- * 국내 호텔은 표시가격에 부가세·봉사료를 포함해 판다. 그래서 금액은 그대로 두고
- * 마감에서 공급가액·부가세·봉사료로 나눈다 — 세금을 따로 더하면 손님에게 안내한
- * 금액과 청구가 달라진다.
+ * Korean hotels sell at tax-inclusive prices, so we keep the amount as posted and
+ * split net, VAT and service charge at closing. Adding tax on top would make the
+ * charge differ from the price the guest was quoted.
  */
 interface MockTransactionCode {
   transactionCode: string;
   hotelId: string;
   name: string;
-  /** Room = 객실, FoodBeverage = 식음, Other = 기타, Payment = 결제. */
+  /** Room, FoodBeverage, Other, Payment. */
   group: string;
-  /** 부가세율. 0.1 이면 10%. */
+  /** VAT rate. 0.1 means 10%. */
   vatRate: number;
-  /** 봉사료율. 식음은 보통 10%, 객실은 0 이다. */
+  /** Service charge rate. Usually 10% for F&B, 0 for rooms. */
   serviceChargeRate: number;
-  /** 표시가격에 세금이 포함되어 있으면 true. */
+  /** True when tax is already inside the displayed price. */
   taxInclusive: boolean;
   active: boolean;
 }
@@ -490,7 +490,7 @@ function seedRates(): void {
       seasons: [],
       packageCodes: ['BFAST'],
       status: 'Active',
-      // 협약 요금은 취소가 자유롭다. 대신 값이 싸다.
+      // Corporate rates cancel freely; that is what the lower price buys.
       cancellationPolicy: {
         name: '당일 취소까지 무료',
         freeUntilHoursBeforeArrival: 0,
@@ -508,10 +508,10 @@ function seedRates(): void {
 }
 
 /**
- * 같은 날 같은 객실에 두 시즌이 걸리지 않게 한다.
+ * Stops two seasons covering the same room on the same day.
  *
- * 겹치도록 두면 무엇이 이기는지가 등록 순서에 달리고, 성수기 금요일이 평일보다
- * 싸지는 일이 생긴다. 성수기 주중·주말처럼 요일을 갈라 따로 등록해야 한다.
+ * Overlapping seasons make the winner depend on insert order, and a peak Friday
+ * can end up cheaper than a weekday. Split by weekday and register separately.
  */
 function assertNoSeasonConflict(plan: MockRatePlan, candidate: MockRateSeason): void {
   const days = candidate.daysOfWeek?.length ? candidate.daysOfWeek : [0, 1, 2, 3, 4, 5, 6];
@@ -539,10 +539,10 @@ function dayOfWeek(date: string): number {
 }
 
 /**
- * 그날 그 객실의 단가.
+ * Nightly amount for that room on that date.
  *
- * 시즌은 뒤에 등록한 것이 이긴다 — 넓은 기간 위에 좁은 기간을 덮어쓰는 것이
- * 요금 설정의 보통 순서다.
+ * The last matching season wins — narrowing a wide range is the usual order in
+ * rate setup.
  */
 function nightlyAmount(plan: MockRatePlan, roomType: string, date: string): number {
   let amount = plan.baseAmounts[roomType] ?? 0;
@@ -573,7 +573,7 @@ interface Quote {
   }>;
 }
 
-/** 요금 계산. 안내와 청구가 같은 값을 쓰도록 한 곳에서만 계산한다. */
+/** Prices a stay. One place only, so the quote and the charge agree. */
 function quote(
   plan: MockRatePlan,
   roomType: string,
@@ -602,7 +602,7 @@ function quote(
   const nightlyRates = dates.map((date, index) => ({
     date,
     amount: nightlyAmount(plan, roomType, date),
-    // 투숙당 1회인 패키지는 첫날에 붙인다. 매일 붙이면 박수만큼 더 받는다.
+    // Per-stay packages attach to the first night; every night would multiply them.
     packageAmount: perNight + (index === 0 ? perStay : 0),
   }));
 
@@ -629,11 +629,11 @@ function quote(
 }
 
 /**
- * 블록의 그날 그 객실 값.
+ * Block amount for that room on that date.
  *
- * 협의 요금을 넣었으면 그것이 이긴다 — 단체는 값을 따로 합의하고, 그 합의가
- * 정가보다 우선한다. 넣지 않았으면 지정한 요금 코드의 계산을 따르고, 그것도
- * 없으면 기준 요금이다.
+ * A negotiated amount wins — groups agree their own price and that agreement
+ * beats rack rate. Without one, follow the named rate plan; without that,
+ * fall back to the base rate.
  */
 function blockAmount(
   hotelId: string,
@@ -650,7 +650,7 @@ function blockAmount(
   return nightlyAmount(plan, roomType, date);
 }
 
-/** 그 기간에 팔 수 있는 요금만 고른다. */
+/** Rate plans that can be sold for this stay. */
 function sellablePlans(hotelId: string, arrival: string, departure: string): MockRatePlan[] {
   const lastNight = addDays(departure, -1);
   return [...ratePlans.values()].filter(
@@ -690,18 +690,18 @@ function readDepositPolicy(raw: unknown): MockDepositPolicy {
   };
 }
 
-/** OPERA 가 인정하는 보증 방식. 노쇼를 어떻게 다룰지가 여기서 갈린다. */
+/** Guarantee types OPERA accepts. They decide how a no-show is handled. */
 const GUARANTEE_CODES = ['SIXPM', 'CREDITCARD', 'DEPOSIT', 'COMPANY', 'COMP'];
 
-/** 취소 위약금과 보증금에 쓰는 거래 코드. */
+/** Transaction codes for cancellation penalties and deposits. */
 const CANCELLATION_FEE_CODE = '8000';
 const DEPOSIT_CODE = '8100';
 
 /**
- * 무료 취소 기한.
+ * Deadline for free cancellation.
  *
- * 도착일 자정에서 규정 시간만큼 앞당긴 시점이다. "1일 전 18시" 는 30시간 전으로
- * 적는다 — 시(hour)로 두면 호텔마다 다른 기준을 한 값으로 다룰 수 있다.
+ * Midnight on the arrival date, moved back by the policy hours. "18:00 the day
+ * before" is 30 hours, so hotels with different cut-offs share one field.
  */
 function freeCancellationUntil(arrival: string, hours: number): string {
   const at = new Date(`${arrival}T00:00:00.000Z`);
@@ -710,10 +710,10 @@ function freeCancellationUntil(arrival: string, hours: number): string {
 }
 
 /**
- * 취소 위약금.
+ * Cancellation penalty.
  *
- * 기한 안이면 0 이다. 기한을 넘겼으면 규정대로 계산한다 — 1박, 전액, 비율,
- * 정액. 이미 취소된 예약은 다시 물리지 않는다.
+ * Zero inside the free window. Past it, apply the policy — first night, full
+ * stay, percentage or fixed. An already-cancelled reservation is not charged again.
  */
 function cancellationPenalty(
   reservation: MockReservation,
@@ -762,7 +762,7 @@ function cancellationPenalty(
   return { policyName: policy.name, freeUntil, withinFreeWindow, amount };
 }
 
-/** 예약에 요구되는 보증금. 규정이 없으면 0 이다. */
+/** Deposit required for a reservation. Zero when no policy applies. */
 function depositRequired(
   reservation: MockReservation,
   plan: MockRatePlan | undefined,
@@ -792,10 +792,10 @@ function depositRequired(
 }
 
 /**
- * 예약에 적용할 요금을 찾는다.
+ * Finds the rate plan to price a reservation with.
  *
- * 없는 요금 코드로 예약을 받으면 금액이 0 인 예약이 생기고, 그 사실은 손님이
- * 나갈 때에야 드러난다.
+ * Accepting an unknown rate code creates a zero-amount reservation, and nobody
+ * notices until the guest checks out.
  */
 function requirePlan(hotelId: string, code: string): MockRatePlan {
   const plan = ratePlans.get(planKey(hotelId, code));
@@ -805,14 +805,14 @@ function requirePlan(hotelId: string, code: string): MockRatePlan {
   return plan;
 }
 
-/** 모의 객실 상태. 실제로는 OPERA 가 들고 있다. */
+/** Mock room state. OPERA owns this for real. */
 const rooms = new Map<string, { roomStatus: string; occupied: boolean; roomType: string }>();
 
 interface MockRoomOutage {
   outageId: string;
   hotelId: string;
   roomId: string;
-  /** OutOfOrder = 재고에서 제외, OutOfService = 판매만 중지. */
+  /** OutOfOrder removes it from inventory; OutOfService only stops selling it. */
   kind: string;
   startDate: string;
   endDate: string;
@@ -820,7 +820,7 @@ interface MockRoomOutage {
   returnStatus: string;
 }
 
-/** 사용 불가 객실 기간. 예약 재고를 깎는 쪽이라 예약과 같은 수명으로 둔다. */
+/** Room outages. They cut inventory, so they live as long as reservations do. */
 const roomOutages = new Map<string, MockRoomOutage>();
 
 interface MockPosting {
@@ -828,7 +828,7 @@ interface MockPosting {
   type: string;
   transactionCode: string;
   description: string;
-  /** 부호가 붙은 값. 청구는 양수, 결제는 음수다. */
+  /** Signed amount: charges positive, payments negative. */
   amount: number;
   currencyCode: string;
   postedAt: string;
@@ -848,10 +848,10 @@ interface MockFolio {
 }
 
 /**
- * 모의 폴리오 원장.
+ * Mock folio ledger.
  *
- * 잔액은 저장하지 않는다. 거래 합계로 매번 다시 센다 — 증분으로 더해 가면 한
- * 번의 실패가 영구적인 잔액 오차로 남는다.
+ * Balances are not stored. We re-sum the postings every time — incremental
+ * updates turn one failed write into a permanent discrepancy.
  */
 const folios = new Map<string, MockFolio>();
 
@@ -862,11 +862,11 @@ let postingSequence = FOLIO_SEQUENCE_START;
 const OUTAGE_SEQUENCE_START = 700;
 let outageSequence = OUTAGE_SEQUENCE_START;
 
-/** 객실 공유 묶음 번호. */
+/** Share group id. */
 const SHARE_SEQUENCE_START = 900;
 let shareSequence = SHARE_SEQUENCE_START;
 
-/** 공유 표시만 떼어 낸 roomStay. 나머지는 그대로 둔다. */
+/** roomStay with the share marker removed. Everything else stays. */
 function dropShare(roomStay: MockReservation['roomStay']): MockReservation['roomStay'] {
   const copy = { ...roomStay };
   delete copy.shareGroupId;
@@ -898,10 +898,10 @@ interface MockBlock {
 const blocks = new Map<string, MockBlock>();
 
 /**
- * 호텔별 영업일.
+ * Business date per hotel.
  *
- * 모의 모드에서는 야간 감사가 돌지 않으므로 달력 날짜와 같게 둔다. 실제로는
- * 마감 전까지 어제로 남아 있고, 그 차이가 매출이 붙는 날짜를 정한다.
+ * The mock has no night audit, so it matches the calendar date. In practice it
+ * stays on yesterday until close, and that gap decides which day revenue lands on.
  */
 const businessDates = new Map<string, string>();
 
@@ -914,10 +914,10 @@ interface MockProfile {
 }
 
 /**
- * 모의 프로필 저장소.
+ * Mock profile store.
  *
- * 예약을 만들 때 함께 채운다. 병합을 검증하려면 예약과 별개로 프로필이 존재해야
- * 하기 때문이다.
+ * Filled when a reservation is created. Verifying merges needs profiles to exist
+ * independently of reservations.
  */
 const profiles = new Map<string, MockProfile>();
 
@@ -931,11 +931,11 @@ function rememberProfile(guest: MockReservation['guest']): void {
   });
 }
 
-/** 블록 번호도 예약과 마찬가지로 시드와 겹치지 않는 지점에서 시작한다. */
+/** Block ids start clear of the seeds, same as reservations. */
 const BLOCK_SEQUENCE_START = 500;
 let blockSequence = BLOCK_SEQUENCE_START;
 
-/** 블록이 재고를 잡는 단위는 '박'이다. 출발일 당일은 포함하지 않는다. */
+/** Blocks hold inventory per night. The departure date itself is not included. */
 function stayDates(startDate: string, endDate: string): string[] {
   const count = nights(startDate, endDate);
   return Array.from({ length: count }, (_, i) => addDays(startDate, i));
@@ -982,11 +982,11 @@ function seedBlocks(): void {
 }
 
 /**
- * 이 예약을 블록에서 뺄 수 있는지 확인한다.
+ * Checks whether this reservation can be picked up from the block.
  *
- * 잡아 두지 않은 객실 타입이나 기간을 그냥 통과시키면 룸리스트에는 예약이
- * 보이는데 픽업은 0 으로 남는다. 두 숫자가 어긋나면 컷오프 때 남은 객실을
- * 풀지 판단할 근거가 사라진다. 그래서 거절한다.
+ * Letting through a room type or date the block never held shows the reservation
+ * on the rooming list while pickup stays at zero. Once those two disagree there
+ * is no basis for deciding what to release at cut-off, so we reject it.
  */
 function assertPickupPossible(
   block: MockBlock,
@@ -1014,10 +1014,10 @@ function assertPickupPossible(
 }
 
 /**
- * 블록 코드로 예약이 들어오면 해당 일자·객실 타입의 픽업을 올린다.
+ * Raises pickup for that date and room type when a booking cites a block code.
  *
- * 픽업이 늘지 않으면 블록이 얼마나 소진됐는지 알 수 없다. 실제 OPERA 도
- * 예약 시점에 갱신한다. 호출 전에 assertPickupPossible 로 걸러 둔다.
+ * Without it there is no way to tell how much of the block is used. Real OPERA
+ * updates at booking time too. Callers filter with assertPickupPossible first.
  */
 function applyPickup(block: MockBlock, roomType: string, arrival: string, departure: string): void {
   for (const date of stayDates(arrival, departure)) {
@@ -1028,7 +1028,7 @@ function applyPickup(block: MockBlock, roomType: string, arrival: string, depart
 
 function seedRooms(): void {
   if (rooms.size > 0) return;
-  // 객실 번호 · 하우스키핑 상태 · 재실 여부 · 객실 타입. BE 시드와 같은 편성이다.
+  // Number, housekeeping status, occupancy, room type. Same layout as the BE seed.
   const base: Array<[string, string, boolean, string]> = [
     ['1101', 'Clean', false, 'STDT'],
     ['1102', 'Dirty', false, 'STDT'],
@@ -1046,8 +1046,8 @@ function seedRooms(): void {
 
 function seedOutages(): void {
   if (roomOutages.size > 0) return;
-  // 시드 객실 1502 가 OutOfOrder 인 이유를 기간으로 남겨 둔다. 상태만 있고
-  // 근거가 없으면 언제 되파는지 아무도 모른다.
+  // Records why seeded room 1502 is out of order. A status with no dates leaves
+  // nobody knowing when it can be sold again.
   const outageId = `OOO-${(outageSequence += 1)}`;
   roomOutages.set(outageId, {
     outageId,
@@ -1061,18 +1061,18 @@ function seedOutages(): void {
   });
 }
 
-/** 사용 불가 기간이 투숙 기간(도착 ~ 출발 전날)에 하루라도 걸치는가. */
+/** Does the outage touch the stay (arrival through the night before departure)? */
 function outageOverlapsStay(outage: MockRoomOutage, arrival: string, departure: string): boolean {
   const lastNight = addDays(departure, -1);
   return outage.startDate <= lastNight && outage.endDate >= arrival;
 }
 
-/** 해당 날짜에 사용 불가인가. 시작·종료일 모두 포함이다. */
+/** Is the room out on that date? Start and end are both inclusive. */
 function outageCoversDate(outage: MockRoomOutage, date: string): boolean {
   return outage.startDate <= date && outage.endDate >= date;
 }
 
-/** 잔액은 언제나 거래 합계다. 소수점 둘째 자리에서 끊는다. */
+/** The balance is always the sum of postings, cut to two decimals. */
 function folioBalance(folio: MockFolio): number {
   const total = folio.postings.reduce((sum, posting) => sum + posting.amount, 0);
   return Math.round(total * 100) / 100;
@@ -1089,10 +1089,10 @@ function reservationFolios(reservationId: string): MockFolio[] {
 }
 
 /**
- * 예약의 폴리오를 찾고, 없으면 1번 창구를 연다.
+ * Finds the reservation's folio, opening window 1 when there is none.
  *
- * OPERA 는 예약을 만들 때 폴리오를 함께 만든다. 시드 예약까지 일일이 만들어
- * 두는 대신 처음 필요해질 때 연다 — 밖에서 보이는 결과는 같다.
+ * OPERA creates a folio with the reservation. Rather than seeding one for every
+ * reservation, we open it on first use — the outside behaviour is the same.
  */
 function ensureFolio(hotelId: string, reservationId: string, window: number): MockFolio {
   const existing = reservationFolios(reservationId).find((folio) => folio.window === window);
@@ -1120,16 +1120,16 @@ function ensureFolio(hotelId: string, reservationId: string, window: number): Mo
   return folio;
 }
 
-/** 객실 타입별 재고. 실제로는 호텔 설정에서 온다. */
+/** Inventory per room type. Real values come from hotel configuration. */
 const INVENTORY: Record<string, number> = { STDT: 10, DLXK: 10, SUIT: 4 };
 
 /**
- * 그 기간에 팔 수 있는 객실 수.
+ * Rooms sellable for that stay.
  *
- * 재고 안내와 예약 수락이 같은 계산을 써야 한다. 따로 두면 화면에 "매진" 이라고
- * 떠 있는데 예약은 만들어지는 일이 생긴다.
+ * Quoting availability and accepting a booking must use the same count. Split
+ * them and the screen can say sold out while the booking still goes through.
  *
- * 대기 예약은 세지 않는다 — 자리를 차지하지 않고 기다리는 것이 대기다.
+ * Waitlisted reservations do not count — waiting means not holding a room.
  */
 function availableRooms(
   hotelId: string,
@@ -1138,10 +1138,10 @@ function availableRooms(
   departure: string,
 ): number {
   /*
-   * 객실을 공유하는 예약은 하나로 센다.
+   * Shared reservations count as one room.
    *
-   * 예약은 둘이어도 객실은 하나다. 각각 세면 재고가 실제보다 빨리 소진되어
-   * 팔 수 있는 방을 팔지 못한다.
+   * Two reservations, one room. Counting both burns inventory faster than
+   * reality and leaves sellable rooms unsold.
    */
   const occupying = [...store.values()].filter(
     (r) =>
@@ -1163,7 +1163,7 @@ function availableRooms(
   return Math.max(0, (INVENTORY[roomType] ?? 0) - sold - blocked);
 }
 
-/** 거래 종류가 잔액 방향을 정한다. */
+/** The posting type decides which way the balance moves. */
 function signedAmount(type: string, amount: number, negative?: boolean): number {
   switch (type) {
     case 'Charge':
@@ -1193,7 +1193,7 @@ function findPosting(
   throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `거래를 찾을 수 없습니다: ${postingId}`);
 }
 
-/** 그 기간에 팔 수 있는 객실인지. 사용 불가 기간과 겹치면 배정할 수 없다. */
+/** Is the room sellable for that stay? An overlapping outage blocks assignment. */
 function assertRoomAssignable(
   hotelId: string,
   roomId: string,
@@ -1220,10 +1220,10 @@ function assertRoomAssignable(
 }
 
 /**
- * 설정에 없는 코드는 거절한다.
+ * Rejects codes that are not configured.
  *
- * 통과시키면 오타가 그대로 집계에 들어가 "BOOKINGCOM" 과 "BOOKING.COM" 이 서로
- * 다른 채널이 된다. 채널별 실적은 그 순간부터 신뢰할 수 없다.
+ * Letting them through puts typos straight into the reports, where BOOKINGCOM
+ * and BOOKING.COM become two channels. Channel performance stops being trusted.
  */
 function assertCode(allowed: string[], value: string, label: string): void {
   if (!allowed.includes(value)) {
@@ -1235,13 +1235,13 @@ function assertCode(allowed: string[], value: string, label: string): void {
   }
 }
 
-/** 노쇼로 바꿀 수 있는 출발 상태. 이미 들어온 손님을 안 왔다고 할 수는 없다. */
+/** Statuses that can become a no-show. A guest already in house did show up. */
 const NO_SHOW_FROM = ['Reserved', 'Confirmed', 'Waitlisted'];
 
-/** 체크인할 수 있는 출발 상태. 취소·노쇼된 예약으로 방을 내줄 수는 없다. */
+/** Statuses that can check in. A cancelled or no-show booking gets no room. */
 const CHECK_IN_FROM = ['Reserved', 'Confirmed'];
 
-/** OPERA 는 예약당 폴리오 윈도를 8개까지 둔다. */
+/** OPERA allows up to eight folio windows per reservation. */
 const MAX_FOLIO_WINDOW = 8;
 
 function assertReservationExists(reservationId: string): void {
@@ -1263,8 +1263,8 @@ function assertNoShowAllowed(reservation: MockReservation, businessDate: string)
     );
   }
 
-  // 아직 도착일이 오지 않은 예약을 노쇼로 찍으면 판매 가능한 재고가 사라지고
-  // 노쇼 수수료 근거도 없다. 영업일이 도착일에 닿아야 판단할 수 있다.
+  // Marking a future arrival as a no-show destroys sellable inventory and there is
+  // no basis for a fee. The business date has to reach the arrival date first.
   if (reservation.roomStay.arrivalDate > businessDate) {
     throw new OperaApiError(
       400,
@@ -1275,11 +1275,11 @@ function assertNoShowAllowed(reservation: MockReservation, businessDate: string)
 }
 
 /**
- * 모의 응답은 항상 복사본이다.
+ * Mock responses are always copies.
  *
- * 저장된 객체를 그대로 돌려주면 호출자가 손대는 순간 저장소가 조용히 바뀌고,
- * 뒤에 일어난 변경이 앞서 받은 응답에도 소급 반영된다. 실제 HTTP 응답은 그런
- * 식으로 움직이지 않으므로 여기서도 끊어 둔다.
+ * Returning the stored object lets a caller mutate the store, and later changes
+ * appear retroactively in responses already handed out. Real HTTP does not work
+ * that way, so we cut the link here too.
  */
 export function mockOperaRequest<T>(path: string, options: OperaRequestOptions): T {
   return structuredClone(handleMockRequest<T>(path, options));
@@ -1298,20 +1298,20 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
   const body = (options.body ?? {}) as Record<string, unknown>;
   const hotelId = options.hotelId ?? 'SAND01';
 
-  // --- 가용 재고 ---------------------------------------------------------
+  // --- Availability ------------------------------------------------------
   if (method === 'GET' && /\/availability$/.test(path)) {
     const arrival = String(query.startDate ?? dayOffset(0));
     const departure = String(query.endDate ?? dayOffset(1));
     const stayNights = nights(arrival, departure);
 
-    // 안내와 수락이 같은 계산을 쓴다. 따로 두면 "매진" 인데 예약이 만들어진다.
+    // Quoting and accepting share one calculation. Split them and "sold out" still books.
     const roomTypes = query.roomType ? [String(query.roomType)] : Object.keys(RATES);
     const adults = Number(query.adults ?? 1);
     const sellable = sellablePlans(hotelId, arrival, departure);
 
     return {
       roomStays: roomTypes.map((code) => {
-        // 안내 총액은 그 객실을 팔 수 있는 가장 싼 요금을 기준으로 한다.
+        // The quoted total uses the cheapest rate that can sell this room.
         const cheapest = sellable
           .map((plan) => quote(plan, code, arrival, departure, adults))
           .filter((row): row is Quote => Boolean(row))
@@ -1331,7 +1331,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     } as T;
   }
 
-  // --- 요금 --------------------------------------------------------------
+  // --- Rates ---------------------------------------------------------------
   if (method === 'GET' && /\/rates$/.test(path)) {
     const arrival = String(query.startDate ?? dayOffset(0));
     const departure = String(query.endDate ?? dayOffset(1));
@@ -1351,7 +1351,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
             roomType: row.roomType,
             roomTypeName: ROOM_TYPE_NAMES[row.roomType],
             currencyCode: row.currencyCode,
-            // 하루치 단가와 총액을 함께 준다. OPERA 도 기간 요금을 이렇게 내려준다.
+            // Nightly amounts alongside the total. OPERA returns period rates this way.
             nightlyRates: row.nightlyRates,
             packages: row.packages,
             total: { amount: row.totalAmount, currencyCode: row.currencyCode },
@@ -1361,7 +1361,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return { ratePlans: offers } as T;
   }
 
-  // --- 거래 코드 -----------------------------------------------------------
+  // --- Transaction codes -----------------------------------------------------
   if (/\/csh\/v1\/hotels\/[^/]+\/transactionCodes$/.test(path)) {
     if (method === 'GET') {
       return {
@@ -1430,7 +1430,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return updated as T;
   }
 
-  // --- 요금 코드 관리 ------------------------------------------------------
+  // --- Rate plan configuration -------------------------------------------------
   if (/\/rtp\/v1\/hotels\/[^/]+\/packages$/.test(path)) {
     if (method === 'GET') {
       return {
@@ -1576,10 +1576,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         packageCodes: ((body.packageCodes ?? []) as string[]).map((c) => String(c).toUpperCase()),
         status: String(body.status ?? 'Active'),
         /*
-         * 규정을 안 주면 취소 자유·보증금 없음이다.
+         * No policy means free cancellation and no deposit.
          *
-         * 여기서 임의로 위약금을 걸면 손님에게 알리지 않은 조건으로 돈을 받게
-         * 된다. 받겠다면 명시해야 한다.
+         * Inventing a penalty here charges the guest on terms nobody told them.
+         * If the hotel wants one, it has to say so.
          */
         cancellationPolicy: readCancellationPolicy(body.cancellationPolicy),
         depositPolicy: readDepositPolicy(body.depositPolicy),
@@ -1718,7 +1718,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
   }
 
-  // --- 하우스키핑: 객실 상태 --------------------------------------------
+  // --- Housekeeping: room status ---------------------------------------------
   if (method === 'GET' && /\/hsk\/v1\/hotels\/[^/]+\/rooms$/.test(path)) {
     const wanted = query.roomStatus ? String(query.roomStatus) : undefined;
     return {
@@ -1741,7 +1741,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       throw new OperaApiError(400, { detail: 'INVALID_STATUS' }, `알 수 없는 객실 상태: ${next}`);
     }
 
-    // 재실 중인 객실을 판매 불가로 돌리면 재고와 실제가 어긋난다. OPERA 도 막는다.
+    // Taking an occupied room out of service desyncs inventory from reality. OPERA blocks it too.
     if (room.occupied && (next === 'OutOfOrder' || next === 'OutOfService')) {
       throw new OperaApiError(
         400,
@@ -1755,7 +1755,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return { hotelId, roomId, ...updated } as T;
   }
 
-  // --- 사용 불가 객실 -----------------------------------------------------
+  // --- Room outages ------------------------------------------------------------
   if (method === 'GET' && /\/hsk\/v1\/hotels\/[^/]+\/outOfOrders$/.test(path)) {
     const roomFilter = query.roomId ? String(query.roomId) : undefined;
     const onDate = query.onDate ? String(query.onDate) : undefined;
@@ -1796,7 +1796,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 이미 지난 기간을 막아도 그 사이 판 객실이 되돌아오지 않는다. 실적만 어긋난다.
+    // Blocking a past range does not bring back rooms already sold; it only skews reports.
     const today = businessDates.get(hotelId) ?? dayOffset(0);
     if (endDate < today) {
       throw new OperaApiError(
@@ -1806,7 +1806,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 같은 객실을 두 번 빼면 재고에서 두 번 깎인다.
+    // Blocking the same room twice deducts it from inventory twice.
     const overlapping = [...roomOutages.values()].find(
       (outage) =>
         outage.hotelId === hotelId &&
@@ -1822,8 +1822,8 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 그 기간에 이 객실로 들어오기로 한 손님이 있으면 먼저 옮겨야 한다.
-    // 등록만 받아 두면 도착 당일에야 알게 된다.
+    // A guest already booked into this room for those dates has to move first.
+    // Accepting the outage silently means finding out on arrival day.
     const assigned = [...store.values()].find(
       (reservation) =>
         reservation.hotelId === hotelId &&
@@ -1840,7 +1840,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 오늘 당장 빼는데 손님이 들어 있으면 막는다. 미래 기간은 그때까지 나가므로 허용한다.
+    // Refuse if the room is occupied and the outage starts today. Future ranges are fine.
     if (room.occupied && startDate <= today) {
       throw new OperaApiError(
         409,
@@ -1862,8 +1862,8 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     };
     roomOutages.set(outageId, outage);
 
-    // 기간이 오늘을 포함하면 하우스키핑 상태도 지금 바꾼다. 미래 건은 그대로 둔다 —
-    // 다음 주 공사 때문에 오늘 못 파는 것은 아니다.
+    // If the range covers today, change housekeeping status now. Future ones stay —
+    // next week's maintenance does not stop us selling the room today.
     if (outageCoversDate(outage, today)) {
       rooms.set(roomId, { ...room, roomStatus: kind });
     }
@@ -1885,9 +1885,9 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
 
     roomOutages.delete(outageId);
 
-    // 해제하면 객실을 되판다. 다만 청소 여부는 알 수 없으므로 복귀 상태는
-    // 등록할 때 정해 둔 값(대개 Dirty)을 쓴다. Clean 으로 되돌리면 청소하지 않은
-    // 객실이 판매 가능으로 보인다.
+    // Releasing puts the room back on sale. We cannot know whether it is clean, so
+    // it returns to the status chosen at registration (usually Dirty). Forcing Clean
+    // would show an uncleaned room as sellable.
     const room = rooms.get(outage.roomId);
     const today = businessDates.get(hotelId) ?? dayOffset(0);
     if (room && outageCoversDate(outage, today)) {
@@ -1897,7 +1897,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return { ...outage, released: true } as T;
   }
 
-  // --- 영업일 ------------------------------------------------------------
+  // --- Business date -------------------------------------------------------
   if (method === 'GET' && /\/lov\/v1\/hotels\/[^/]+\/businessDate$/.test(path)) {
     return {
       hotelId,
@@ -1906,7 +1906,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     } as T;
   }
 
-  // --- 프로필 ------------------------------------------------------------
+  // --- Profiles --------------------------------------------------------------
   const profileMergeMatch = /\/crm\/v1\/profiles\/([^/]+)\/merge$/.exec(path);
   if (profileMergeMatch && method === 'POST') {
     const sourceId = decodeURIComponent(profileMergeMatch[1] ?? '');
@@ -1943,8 +1943,8 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 예약의 프로필을 정본으로 옮긴다. 원본은 지우지 않는다 — 지우면 예약의
-    // 게스트가 사라지고, 남겨 두면 어느 쪽이 정본인지 알 수 있다.
+    // Move reservations onto the surviving profile. The source is not deleted —
+    // deleting it would drop the guest from those reservations.
     for (const reservation of store.values()) {
       if (reservation.guest.profileId === sourceId) {
         reservation.guest = { ...reservation.guest, profileId: targetId };
@@ -1977,7 +1977,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return profile as T;
   }
 
-  // --- 단체 블록 ---------------------------------------------------------
+  // --- Group blocks ------------------------------------------------------------
   if (method === 'GET' && /\/blk\/v1\/hotels\/[^/]+\/blocks$/.test(path)) {
     let items = [...blocks.values()].filter((b) => b.hotelId === hotelId);
 
@@ -2026,8 +2026,8 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
           `알 수 없는 객실 타입: ${roomType}`,
         );
       }
-      // 요금 코드를 지정했으면 실재해야 한다. 없는 코드로 잡아 두면 룸리스트가
-      // 빠져나갈 때 값을 매길 수 없다.
+      // A named rate plan must exist. Holding rooms on an unknown code leaves the
+      // rooming list with no way to price a pickup.
       if (slot.ratePlanCode) {
         const plan = requirePlan(hotelId, String(slot.ratePlanCode));
         if (plan.baseAmounts[roomType] === undefined && slot.amount === undefined) {
@@ -2051,7 +2051,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       endDate,
       cutoffDate: body.cutoffDate ? String(body.cutoffDate) : undefined,
       currencyCode: 'KRW',
-      // 요청은 객실 타입별 수량만 주고, 일자별로 펼치는 것은 OPERA 의 몫이다.
+      // The request carries counts per room type; spreading them by date is OPERA's job.
       roomTypeAllocations: stayDates(startDate, endDate).flatMap((date) =>
         allocations.map((slot) => ({
           date,
@@ -2081,7 +2081,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     if (method === 'PATCH' || method === 'PUT') {
       const nextStatus = body.blockStatus ? String(body.blockStatus) : existing.blockStatus;
 
-      // 이미 예약이 빠져나간 블록을 취소하면 그 예약들의 근거가 사라진다.
+      // Cancelling a block with pickups removes the basis for those reservations.
       const pickedUp = existing.roomTypeAllocations.reduce((sum, a) => sum + a.roomsPickedUp, 0);
       if (nextStatus === 'Cancelled' && pickedUp > 0) {
         throw new OperaApiError(
@@ -2092,10 +2092,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       }
 
       /*
-       * 협의 요금 조정.
+       * Adjusting the negotiated amount.
        *
-       * 이미 빠져나간 예약의 금액은 건드리지 않는다 — 그 손님과는 그 값으로
-       * 합의가 끝났다. 앞으로 빠져나갈 몫만 새 값으로 잡는다.
+       * Reservations already picked up keep their amount — that price is agreed
+       * with that guest. Only future pickups take the new one.
        */
       const rates = (body.rates ?? []) as Array<Record<string, unknown>>;
       const allocations = existing.roomTypeAllocations.map((slot) => {
@@ -2131,7 +2131,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
   }
 
-  // --- 예약 목록 ---------------------------------------------------------
+  // --- Reservation list ----------------------------------------------------
   if (method === 'GET' && /\/reservations$/.test(path)) {
     let items = [...store.values()].filter((r) => r.hotelId === hotelId);
 
@@ -2164,7 +2164,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     } as T;
   }
 
-  // --- 예약 생성 ---------------------------------------------------------
+  // --- Create reservation ----------------------------------------------------
   if (method === 'POST' && /\/reservations$/.test(path)) {
     const roomStay = (body.roomStay ?? {}) as Record<string, unknown>;
     const guest = (body.guest ?? {}) as Record<string, unknown>;
@@ -2210,14 +2210,14 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 재고를 넘겨 팔지 않는다.
+     * Never oversell.
      *
-     * 지금까지 모의 계층은 가용 재고를 안내만 하고 예약은 무조건 받았다. 그러면
-     * 화면에 "매진" 이라고 떠 있어도 예약이 만들어져, 재고 판단을 OPERA 에 맡긴
-     * 의미가 사라진다.
+     * The mock used to advise on availability but accept every booking. That let
+     * a reservation through while the screen said sold out, which defeats the point
+     * of leaving inventory to OPERA.
      *
-     * 자리가 없을 때 손님을 그냥 돌려보내지 않으려면 대기로 받는다. 대기 예약은
-     * 재고를 차지하지 않고, 자리가 나면 확정으로 올린다.
+     * Rather than turning the guest away when nothing is free, take a waitlist
+     * booking. It holds no inventory and is confirmed when a room opens up.
      */
     const waitlisted = Boolean(roomStay.waitlist);
     if (!waitlisted && availableRooms(hotelId, roomType, arrival, departure) <= 0) {
@@ -2240,20 +2240,20 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     if (channelCode) assertCode(CHANNEL_CODES, channelCode, '판매 채널');
 
     /*
-     * 보증 방식.
+     * Guarantee type.
      *
-     * 기본은 6PM 이다 — 아무 보증 없이 받은 예약은 18시까지만 잡아 둔다. 그렇게
-     * 두지 않으면 노쇼가 그대로 빈 방이 된다.
+     * Defaults to 6PM — an unguaranteed booking is only held until 18:00.
+     * Without that, a no-show is just an empty room.
      */
     const guaranteeCode = String(body.guaranteeCode ?? 'SIXPM').toUpperCase();
     assertCode(GUARANTEE_CODES, guaranteeCode, '보증 방식');
 
     /*
-     * 넘어온 프로필 ID 는 그대로 존중한다.
+     * A supplied profile id is honoured as given.
      *
-     * 모의 저장소는 프로세스 수명만큼만 살아 있어 재시작 뒤에는 예전에 발급한
-     * 프로필을 모른다. 그때 새 번호를 지어내면 호출자가 지정한 것과 다른 프로필에
-     * 예약이 붙고, 재방문 손님마다 프로필이 하나씩 늘어난다.
+     * The mock store lives only as long as the process, so after a restart it does
+     * not know profiles it issued before. Inventing a new id would attach the
+     * reservation to a different profile and multiply profiles per repeat guest.
      */
     const requestedProfileId = guest.profileId ? String(guest.profileId) : undefined;
     const existingProfile = requestedProfileId ? profiles.get(requestedProfileId) : undefined;
@@ -2266,10 +2266,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 요금은 요금 엔진이 정한다.
+     * The rate engine sets the price.
      *
-     * 안내와 청구가 다른 계산을 쓰면 손님이 본 금액과 폴리오에 달리는 금액이
-     * 갈린다. 같은 quote() 를 쓰고, 팔 수 없는 조합은 여기서 거절한다.
+     * If quoting and charging use different maths, the amount the guest saw and
+     * the amount on the folio diverge. Same quote(), and unsellable combinations
      */
     const adultCount = Number(roomStay.adultCount ?? 1);
     const ratePlanCode = String(roomStay.ratePlanCode ?? 'BAR').toUpperCase();
@@ -2298,10 +2298,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 블록에서 빠져나가면 그 블록의 협의 요금으로 판다.
+     * A pickup sells at the block's negotiated amount.
      *
-     * 단체는 값을 따로 합의한다. 정가로 잡으면 합의가 계약서에만 남고 손님은
-     * 다른 금액을 낸다. 일자별로 잡아 둔 값을 그대로 더한다.
+     * Groups agree their own price. Charging rack rate leaves the agreement in the
+     * contract while the guest pays something else. We sum the per-date amounts.
      */
     let totalAmount = priced.totalAmount;
     if (block) {
@@ -2336,10 +2336,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         ...(blockCode ? { blockCode } : {}),
       },
       /*
-       * 기존 프로필로 예약하면 그 프로필의 이름을 쓴다.
+       * Booking on an existing profile keeps that profile's name.
        *
-       * 보낸 이름으로 덮어쓰면 예약 한 건 때문에 손님 이름이 바뀐다. 프로필이
-       * 사람의 기록 원천이고, 예약은 거기에 붙는 것이지 그 반대가 아니다.
+       * Overwriting it with the submitted name renames the guest because of one
+       * reservation. The profile is the record of the person; reservations hang off it.
        */
       guest: existingProfile
         ? {
@@ -2368,15 +2368,15 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return created as T;
   }
 
-  // --- 폴리오 · 거래 -------------------------------------------------------
+  // --- Folios and postings ---------------------------------------------------
   const folioListMatch = /\/reservations\/([^/]+)\/folios$/.exec(path);
   if (folioListMatch && method === 'GET') {
     const reservationId = decodeURIComponent(folioListMatch[1] ?? '');
     assertReservationExists(reservationId);
 
     const list = reservationFolios(reservationId);
-    // 아직 하나도 없으면 1번 창구를 열어 돌려준다. 빈 배열을 주면 호출자가
-    // 창구가 닫힌 것으로 오해한다.
+    // With none yet, open window 1 and return it. An empty array reads as "folio
+    // closed" to the caller.
     if (list.length === 0) ensureFolio(hotelId, reservationId, 1);
 
     return {
@@ -2447,11 +2447,11 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 같은 전표는 한 번만 달린다.
+     * A reference posts only once.
      *
-     * 네트워크가 끊겨 POS 가 재전송하는 일은 흔하다. 두 번 달리면 손님에게 두 번
-     * 청구되고 되돌리기 어렵다. 이미 있으면 그것을 그대로 돌려준다 — 호출자
-     * 입장에서 성공으로 보여야 재시도가 멈춘다.
+     * A POS resending after a dropped connection is common. Posting twice charges
+     * the guest twice and is hard to undo. An existing one is returned as-is so
+     * the caller sees success and stops retrying.
      */
     const reference = body.reference ? String(body.reference) : undefined;
     if (reference) {
@@ -2501,8 +2501,8 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 지우지 않고 반대 부호 조정을 단다. 지우면 손님 명세서에서 요금이 통째로
-    // 사라져 무엇이 정정됐는지 설명할 수 없다.
+    // We post a reversing entry instead of deleting. Deleting makes the charge vanish
+    // from the guest's statement with no way to explain what was corrected.
     const reversalId = `PST-${(postingSequence += 1)}`;
     folio.postings.push({
       postingId: reversalId,
@@ -2553,7 +2553,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 취소된 짝은 함께 있어야 한다. 한쪽만 옮기면 양쪽 잔액이 모두 틀어진다.
+    // A void pair moves together. Moving one side skews both balances.
     if (posting.voidedById) {
       throw new OperaApiError(400, { detail: 'VOIDED_POSTING' }, '취소된 거래는 옮길 수 없습니다.');
     }
@@ -2576,10 +2576,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     const reservationId = decodeURIComponent(closeMatch[1] ?? '');
     assertReservationExists(reservationId);
     const window = Number(closeMatch[2]);
-    // 1번 창구는 예약이 있으면 언제나 존재한다. 거래 등록과 같은 규칙을 쓴다.
+    // Window 1 always exists once a reservation does, same rule as posting.
     const folio = ensureFolio(hotelId, reservationId, window);
 
-    // 잔액이 남은 폴리오를 닫으면 매출 누락으로 이어진다.
+    // Closing a folio with a balance leaves revenue unrecorded.
     const balance = folioBalance(folio);
     if (balance !== 0) {
       throw new OperaApiError(
@@ -2593,7 +2593,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return toFolioPayload(folio) as T;
   }
 
-  // --- 취소 조건 · 보증금 ---------------------------------------------------
+  // --- Cancellation terms and deposits ---------------------------------------
   const policyMatch = /\/reservations\/([^/]+)\/policies$/.exec(path);
   if (policyMatch && method === 'GET') {
     const id = decodeURIComponent(policyMatch[1] ?? '');
@@ -2606,7 +2606,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     const penalty = cancellationPenalty(reservation, plan, new Date());
     const deposit = depositRequired(reservation, plan);
 
-    // 받은 보증금은 폴리오의 결제 합계다. 따로 세면 두 값이 갈린다.
+    // Deposits taken are the folio's payment total. Counting separately splits the two.
     const paid = reservationFolios(reservation.reservationId)
       .flatMap((folio) => folio.postings)
       .filter((posting) => posting.type === 'Payment')
@@ -2674,10 +2674,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 보증금은 폴리오에 결제로 올린다.
+     * A deposit posts to the folio as a payment.
      *
-     * 도착 전이라 청구는 없지만, 그 돈은 이미 우리에게 있다. 따로 두면 체크인
-     * 때 손님이 두 번 내게 되거나, 남은 돈을 돌려주지 못한다.
+     * There is no charge yet, but we already hold the money. Keeping it elsewhere
+     * makes the guest pay twice at check-in, or leaves change we cannot return.
      */
     const folio = ensureFolio(hotelId, reservation.reservationId, 1);
     const reference = body.reference ? String(body.reference) : undefined;
@@ -2703,7 +2703,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return toFolioPayload(folio) as T;
   }
 
-  // --- 객실 공유 ----------------------------------------------------------
+  // --- Room share ------------------------------------------------------------
   const shareMatch = /\/reservations\/([^/]+)\/share$/.exec(path);
   if (shareMatch && method === 'POST') {
     const id = decodeURIComponent(shareMatch[1] ?? '');
@@ -2735,7 +2735,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       }
     }
 
-    // 날짜가 겹치지 않으면 한 방을 함께 쓸 수 없다.
+    // Without overlapping dates they cannot share a room.
     const overlaps =
       first.roomStay.arrivalDate < second.roomStay.departureDate &&
       second.roomStay.arrivalDate < first.roomStay.departureDate;
@@ -2747,7 +2747,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
     }
 
-    // 타입이 다르면 어느 방을 내줄지 정할 수 없다.
+    // With different room types there is no way to decide which room to give.
     if (first.roomStay.roomType !== second.roomStay.roomType) {
       throw new OperaApiError(
         400,
@@ -2757,10 +2757,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 이미 배정된 객실이 있으면 그 방으로 맞춘다.
+     * If one already has a room, match it.
      *
-     * 둘이 서로 다른 방에 들어가 있으면 어느 쪽을 옮길지 우리가 정할 수 없다.
-     * 한쪽 배정을 먼저 풀고 다시 요청해야 한다.
+     * When both sit in different rooms we cannot decide which to move. Release one
+     * assignment first and ask again.
      */
     const assigned = [first.roomStay.roomId, second.roomStay.roomId].filter(Boolean) as string[];
     if (new Set(assigned).size > 1) {
@@ -2809,10 +2809,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     store.set(id, { ...existing, roomStay: dropShare(existing.roomStay) });
 
     /*
-     * 혼자 남은 예약의 묶음도 푼다.
+     * Clear the group on a reservation left alone.
      *
-     * 그대로 두면 공유가 아닌데 공유 표시가 남아, 나중에 다른 예약을 붙일 때
-     * 어느 묶음인지 헷갈린다.
+     * Leaving the marker on a reservation that shares with nobody makes it unclear
+     * which group a later reservation would join.
      */
     const remaining = [...store.values()].filter((r) => r.roomStay.shareGroupId === groupId);
     if (remaining.length === 1) {
@@ -2823,7 +2823,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return store.get(id) as T;
   }
 
-  // --- 대기 확정 ----------------------------------------------------------
+  // --- Waitlist confirmation ---------------------------------------------------
   const confirmMatch = /\/reservations\/([^/]+)\/confirmWaitlist$/.exec(path);
   if (confirmMatch && method === 'POST') {
     const id = decodeURIComponent(confirmMatch[1] ?? '');
@@ -2841,10 +2841,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     /*
-     * 확정 시점에 재고를 다시 본다.
+     * Availability is re-checked at confirmation.
      *
-     * 대기에 올릴 때 자리가 없었다는 사실은 지금과 무관하다. 자리가 났는지는
-     * 지금 세어 봐야 알고, 그 사이 다른 대기 건이 먼저 확정됐을 수도 있다.
+     * That nothing was free when it was waitlisted says nothing about now. Only a
+     * fresh count answers it, and another waitlist entry may have taken the room.
      */
     const { arrivalDate, departureDate, roomType } = existing.roomStay;
     if (availableRooms(hotelId, roomType, arrivalDate, departureDate) <= 0) {
@@ -2860,7 +2860,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return updated as T;
   }
 
-  // --- 체크인 / 체크아웃 --------------------------------------------------
+  // --- Check-in / check-out ----------------------------------------------------
   const checkInMatch = /\/reservations\/([^/]+)\/checkIn$/.exec(path);
   if (checkInMatch && method === 'POST') {
     const id = decodeURIComponent(checkInMatch[1] ?? '');
@@ -2878,7 +2878,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     }
 
     const businessDate = businessDates.get(hotelId) ?? dayOffset(0);
-    // 도착일 전에 체크인하면 그날 밤 재고가 팔린 것으로 잡히지 않는다.
+    // Checking in before the arrival date leaves that night's inventory unsold.
     if (existing.roomStay.arrivalDate > businessDate) {
       throw new OperaApiError(
         400,
@@ -2903,10 +2903,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     );
 
     /*
-     * 다른 손님이 들어 있는 방에 또 넣을 수는 없다.
+     * A room with another guest in it cannot take a second one.
      *
-     * 객실을 함께 쓰기로 한 예약은 예외다 — 두 손님이 한 방을 쓰되 계산만
-     * 따로 하는 편성이 공유다.
+     * Reservations that agreed to share are the exception: two guests, one room,
+     * separate folios — that is what a share is.
      */
     const takenBy = [...store.values()].find(
       (r) =>
@@ -2959,7 +2959,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     const updated: MockReservation = { ...existing, reservationStatus: 'CheckedOut' };
     store.set(id, updated);
 
-    // 나간 방은 비고 청소가 필요하다. 청소 완료로 두면 치우지 않은 방이 팔린다.
+    // A departed room is vacant and needs cleaning. Marking it clean sells an uncleaned room.
     const roomId = existing.roomStay.roomId;
     const room = roomId ? rooms.get(roomId) : undefined;
     if (roomId && room) rooms.set(roomId, { ...room, occupied: false, roomStatus: 'Dirty' });
@@ -2967,7 +2967,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return updated as T;
   }
 
-  // --- 예약 단건 / 수정 / 취소 -------------------------------------------
+  // --- Reservation read / update / cancel ------------------------------------
   const match = /\/reservations\/([^/]+)$/.exec(path);
   if (match) {
     const id = decodeURIComponent(match[1] ?? '');
@@ -2986,8 +2986,8 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
 
       const roomStay = (body.roomStay ?? {}) as Record<string, unknown>;
 
-      // 객실을 배정하려면 그 기간에 팔 수 있는 객실이어야 한다. 공사 중인 방에
-      // 손님을 넣어 두면 도착 당일에야 알게 된다.
+      // Assigning a room requires it to be sellable for those dates. Putting a guest
+      // in a room under maintenance surfaces on arrival day.
       if (roomStay.roomId) {
         assertRoomAssignable(
           hotelId,
@@ -3012,10 +3012,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
         },
       };
       /*
-       * 고치면 다시 매긴다.
+       * An edit reprices.
        *
-       * 날짜나 객실 타입이 바뀌면 요금도 바뀐다. 예전 총액을 그대로 두면 손님이
-       * 3박으로 늘렸는데 2박 값만 청구된다.
+       * Changing dates or room type changes the price. Keeping the old total
+       * charges two nights when the guest extended to three.
        */
       const updatedPlan = requirePlan(hotelId, updated.roomStay.ratePlanCode ?? 'BAR');
       const repriced = quote(
@@ -3046,10 +3046,10 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       }
 
       /*
-       * 취소 위약금.
+       * Cancellation penalty.
        *
-       * 무료 기한을 넘겼으면 규정대로 물린다. 폴리오에 달아 두지 않으면 받을
-       * 근거가 사라지고, 카드 보증으로 잡아 둔 예약도 청구할 수 없다.
+       * Past the free window, charge per policy. Without a folio posting there is
+       * nothing to collect against, even on a card-guaranteed booking.
        */
       const plan = ratePlans.get(planKey(hotelId, existing.roomStay.ratePlanCode ?? 'BAR'));
       const penalty = cancellationPenalty(existing, plan, new Date());
@@ -3090,7 +3090,7 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-/** 테스트가 상태를 초기화할 때 쓴다. */
+/** Used by tests to reset state. */
 export function resetMockStore(): void {
   store.clear();
   rooms.clear();

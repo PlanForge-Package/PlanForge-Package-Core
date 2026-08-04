@@ -56,7 +56,7 @@ describe('모의 OPERA — 프로필', () => {
 });
 
 describe('모의 OPERA — 기존 프로필로 예약', () => {
-  // 다른 번호를 지어내면 호출자가 지정한 것과 다른 프로필에 예약이 붙는다.
+  // Inventing a different id attaches the reservation to another profile.
   it('모르는 프로필 ID 라도 그대로 쓴다', () => {
     const created = mockOperaRequest<Created>(RESERVATIONS, {
       method: 'POST',
@@ -69,7 +69,7 @@ describe('모의 OPERA — 기존 프로필로 예약', () => {
     expect(created.guest.profileId).toBe('PRF-EXTERNAL');
   });
 
-  // 예약 한 건 때문에 손님 이름이 바뀌면 안 된다. 프로필이 기록의 원천이다.
+  // One reservation must not rename the guest. The profile is the record.
   it('아는 프로필이면 그 프로필의 이름을 쓴다', () => {
     const first = book('Hong');
     const second = mockOperaRequest<Created & { guest: { surname: string } }>(RESERVATIONS, {
@@ -103,7 +103,7 @@ describe('모의 OPERA — 기존 프로필로 예약', () => {
 });
 
 describe('모의 OPERA — 프로필 병합', () => {
-  // 원본을 지우면 그 프로필을 쓰던 예약의 게스트가 사라진다.
+  // Deleting the source would drop the guest from reservations using it.
   it('예약을 정본으로 옮기고 원본은 남긴다', () => {
     const first = book('Hong');
     const second = book('Hong');

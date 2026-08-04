@@ -151,8 +151,8 @@ describe('모의 OPERA — 거래', () => {
   });
 
   /*
-   * 네트워크가 끊겨 POS 가 재전송하는 일은 흔하다. 두 번 달리면 손님에게 두 번
-   * 청구되고 되돌리기 어렵다.
+   * A POS resending after a dropped connection is common. Posting twice charges
+   * the guest twice and is hard to undo.
    */
   it('같은 전표는 한 번만 달린다', () => {
     const id = book();
@@ -268,7 +268,7 @@ describe('모의 OPERA — 거래 이관', () => {
     expect(() => transfer(id, postingId, 4)).toThrowError(/열려 있지 않습니다/);
   });
 
-  // 원본과 조정이 갈라지면 양쪽 잔액이 모두 틀어진다.
+  // Splitting an original from its reversal skews both balances.
   it('취소된 거래와 그 조정은 옮기지 않는다', () => {
     const id = book();
     const postingId = post(id, 1, CHARGE).postings[0]!.postingId;
@@ -297,7 +297,7 @@ describe('모의 OPERA — 폴리오 마감', () => {
     expect(folio.status).toBe('Closed');
   });
 
-  // 잔액이 남은 폴리오를 닫으면 매출 누락으로 이어진다.
+  // Closing a folio with a balance leaves revenue unrecorded.
   it('잔액이 남으면 닫지 않는다', () => {
     const id = book();
     post(id, 1, CHARGE);

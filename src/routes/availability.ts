@@ -54,7 +54,7 @@ export const availabilityRoutes: FastifyPluginAsyncTypebox = async (app) => {
   );
 };
 
-/** OHIP 응답에서 실제로 사용하는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaAvailabilityPayload {
   roomStays?: Array<{
     roomType?: string;

@@ -75,8 +75,8 @@ describe('모의 OPERA — 객실 공유', () => {
   });
 
   /*
-   * 예약은 둘이어도 객실은 하나다. 각각 세면 재고가 실제보다 빨리 소진되어
-   * 팔 수 있는 방을 팔지 못한다.
+   * Two reservations, one room. Counting both burns inventory faster than
+   * reality and leaves sellable rooms unsold.
    */
   it('공유하면 재고를 하나만 차지한다', () => {
     const before = available('STDT');
@@ -107,7 +107,7 @@ describe('모의 OPERA — 객실 공유', () => {
     expect(result.reservations.every((r) => r.roomStay.roomId === '1101')).toBe(true);
   });
 
-  // 두 손님이 한 방을 쓰되 계산만 따로 하는 편성이 공유다.
+  // A share is two guests in one room with separate folios.
   it('공유 상대가 든 방에는 함께 들어간다', () => {
     const a = book('STDT', day(0), day(2));
     const b = book('STDT', day(0), day(2));
@@ -157,7 +157,7 @@ describe('모의 OPERA — 공유 거절', () => {
     expect(() => share(a.reservationId, b.reservationId)).toThrowError(/공유할 수 없습니다/);
   });
 
-  // 어느 쪽을 옮길지 우리가 정할 수 없다.
+  // We cannot decide which one to move.
   it('서로 다른 방에 들어가 있으면 묶지 않는다', () => {
     const a = book('STDT', day(0), day(2));
     const b = book('STDT', day(0), day(2));
@@ -185,7 +185,7 @@ describe('모의 OPERA — 공유 해제', () => {
   });
 
   /*
-   * 혼자 남은 예약에 공유 표시가 남으면 공유가 아닌데 공유로 보인다.
+   * A share marker left on a lone reservation makes it look shared when it is not.
    */
   it('둘뿐이었으면 남은 쪽의 표시도 푼다', () => {
     const a = book();

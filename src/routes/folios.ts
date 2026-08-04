@@ -17,16 +17,16 @@ import {
 import { DepositBody } from '../schemas/reservation.js';
 
 /**
- * 폴리오 — 손님의 계산서.
+ * Folio — the guest's bill.
  *
- * 회계 원장은 OPERA 가 원천이다. 잔액을 두 시스템이 각자 계산하면 언젠가
- * 갈리고, 그때 어느 쪽이 맞는지 판단할 근거가 없다. 그래서 거래를 만드는 모든
- * 경로(프런트·외부 POS·결제)가 여기를 지난다.
+ * OPERA owns the ledger. If both systems computed balances they would diverge,
+ * and there would be no basis for deciding which is right. So every path that
+ * creates a posting — front desk, POS, payments — goes through here.
  *
- * 잔액은 우리가 더하지 않는다. OPERA 가 돌려준 값을 그대로 쓴다.
+ * We never add up balances ourselves; we use what OPERA returns.
  *
- * 경로는 OHIP 의 캐셔링 모듈 규약을 따른 **추정치**다(`/csh/v1/...`). 구독
- * 스펙을 받으면 이 파일과 모의 전송 계층만 맞추면 된다.
+ * Paths follow OHIP cashiering conventions but are a guess (`/csh/v1/...`). When
+ * the spec arrives, only this file and the mock transport need fixing.
  */
 export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -88,10 +88,10 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
   );
 
   /**
-   * 보증금 수납.
+   * Taking a deposit.
    *
-   * 도착 전이라 청구는 없지만 그 돈은 이미 우리에게 있다. 폴리오에 결제로 올려
-   * 두지 않으면 체크인 때 손님이 두 번 내거나, 남은 돈을 돌려주지 못한다.
+   * There is no charge before arrival, but we already hold the money. Without a
+   * folio payment the guest pays twice at check-in, or we cannot return change.
    */
   app.post(
     '/v1/reservations/:reservationId/deposit',
@@ -263,7 +263,7 @@ function toFolio(raw: OperaFolioPayload) {
   };
 }
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaPostingPayload {
   postingId?: string;
   type?: string;

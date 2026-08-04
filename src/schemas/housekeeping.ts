@@ -1,7 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { HotelIdQuery } from './common.js';
 
-/** OPERA 의 객실 상태 표기. */
+/** OPERA room status values. */
 export const OperaRoomStatus = Type.Union(
   [
     Type.Literal('Clean'),
@@ -20,7 +20,7 @@ export const RoomStatusParams = Type.Object({
 export const UpdateRoomStatusBody = Type.Object({
   hotelId: Type.Optional(Type.String({ minLength: 1 })),
   status: OperaRoomStatus,
-  /** 정비·수리 사유. OutOfOrder 로 돌릴 때 남긴다. */
+  /** Maintenance reason, recorded when setting OutOfOrder. */
   reason: Type.Optional(Type.String({ maxLength: 200 })),
 });
 

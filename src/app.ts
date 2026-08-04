@@ -22,13 +22,13 @@ import { roomOutageRoutes } from './routes/room-outages.js';
 import { transactionCodeRoutes } from './routes/transaction-codes.js';
 
 /**
- * 호출자가 고칠 수 있는 OPERA 거절은 그대로 내려보낸다.
+ * OPERA rejections the caller can fix pass straight through.
  *
- * 전부 502 로 뭉개면 "출발일이 도착일보다 앞섭니다" 같은 입력 오류가 화면에서
- * 게이트웨이 장애로 보인다. 운영자는 무엇을 고쳐야 할지 알 수 없고, FE 는
- * 재시도해도 소용없는 요청을 재시도한다.
+ * Collapsing everything to 502 makes an input error like "departure is before
+ * arrival" look like a gateway fault. Operators cannot tell what to fix, and the
+ * FE retries a request that will never succeed.
  *
- * 401·403 은 뺐다 — 그건 우리 자격 증명 문제이지 호출자 잘못이 아니다.
+ * 401 and 403 are excluded — those are our credentials, not the caller's fault.
  */
 const CALLER_FIXABLE = new Set([400, 404, 409, 422]);
 
@@ -84,7 +84,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(roomOutageRoutes);
   await app.register(transactionCodeRoutes);
 
-  // OPERA 오류를 게이트웨이 표준 응답으로 변환한다.
+  // Turn OPERA errors into the gateway's standard response.
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof OperaApiError) {
       request.log.warn({ status: error.status, body: error.body }, 'OPERA API error');

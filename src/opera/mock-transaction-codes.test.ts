@@ -31,7 +31,7 @@ describe('모의 OPERA — 거래 코드', () => {
     expect(codes).toContain('5000');
   });
 
-  // 객실은 봉사료가 없고 식음은 붙는다. 분개가 이 차이를 봐야 한다.
+  // Rooms carry no service charge, F&B does. The journal has to see the difference.
   it('매출 그룹과 세율을 함께 준다', () => {
     const room = list().find((row) => row.transactionCode === '1000');
     const fnb = list().find((row) => row.transactionCode === '2000');
@@ -89,7 +89,7 @@ describe('모의 OPERA — 거래 코드', () => {
     expect(updated.serviceChargeRate).toBe(0);
   });
 
-  // 중지한 코드는 새로 달 수 없지만, 지난 마감을 읽을 때는 이름이 필요하다.
+  // Inactive codes cannot be posted, but reading past closings still needs their names.
   it('중지한 코드는 기본 목록에서 빠지고 포함 조회에는 나온다', () => {
     mockOperaRequest(`${CODES}/4000`, {
       method: 'PATCH',

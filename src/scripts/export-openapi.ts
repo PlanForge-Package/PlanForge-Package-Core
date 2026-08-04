@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { buildApp } from '../app.js';
 
-/** 라우트 스키마에서 OpenAPI 문서를 뽑아 openapi/planforge-core.json 으로 저장한다. */
+/** Dumps the OpenAPI document from the route schemas to openapi/planforge-core.json. */
 async function main(): Promise<void> {
   const app = await buildApp();
   await app.ready();

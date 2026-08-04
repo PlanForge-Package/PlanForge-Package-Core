@@ -5,10 +5,11 @@ import { ErrorResponse } from '../schemas/common.js';
 import { RateQuery, RateResponse } from '../schemas/rate.js';
 
 /**
- * 요금 조회.
+ * Rate quotes.
  *
- * 계산하지 않고 OPERA 에 묻는다. 요금은 시즌·요일·프로모션·협약가·수익관리가
- * 얽힌 결과라, 자체 구현하면 OPERA 가 실제로 청구하는 금액과 갈린다.
+ * We ask OPERA instead of computing. Rates come out of seasons, weekdays,
+ * promotions, negotiated deals and revenue management, so our own version would
+ * diverge from what is actually charged.
  */
 export const rateRoutes: FastifyPluginAsyncTypebox = async (app) => {
   app.get(
@@ -74,7 +75,7 @@ function nightsBetween(arrival: string, departure: string): number {
   return Math.max(0, Math.round((to - from) / 86_400_000));
 }
 
-/** OHIP 응답에서 실제로 쓰는 부분만 좁게 선언한다. */
+/** Declares only the parts of the OHIP response we actually use. */
 interface OperaRatePayload {
   ratePlans?: Array<{
     ratePlanCode?: string;

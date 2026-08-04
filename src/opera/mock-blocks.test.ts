@@ -46,7 +46,7 @@ beforeEach(() => {
 describe('모의 OPERA — 블록 생성', () => {
   it('객실 타입별 수량을 일자별로 펼친다', () => {
     const created = createBlock();
-    // 2박 × 객실 타입 1개
+    // 2 nights x 1 room type
     expect(created.roomTypeAllocations).toHaveLength(2);
     expect(created.roomTypeAllocations.map((a) => a.date)).toEqual([day(30), day(31)]);
     expect(created.roomTypeAllocations.every((a) => a.roomsBlocked === 5)).toBe(true);
@@ -62,7 +62,7 @@ describe('모의 OPERA — 블록 생성', () => {
     ).toThrow(OperaApiError);
   });
 
-  // 코드가 겹치면 예약이 어느 블록에서 빠지는지 판단할 수 없다.
+  // Duplicate codes make it impossible to tell which block a booking came from.
   it('같은 호텔에 같은 블록 코드는 두 번 만들 수 없다', () => {
     createBlock({ blockCode: 'DUPE' });
     expect(() => createBlock({ blockCode: 'DUPE' })).toThrow(/이미 쓰고 있는/);
@@ -85,7 +85,7 @@ describe('모의 OPERA — 블록 협의 요금', () => {
       roomTypeAllocations: [{ roomType: 'STDT', roomsBlocked: 5, ratePlanCode: 'CORP' }],
     });
 
-    // CORP 는 STDT 를 160,000 에 판다.
+    // CORP sells STDT at 160,000.
     expect(created.roomTypeAllocations.every((a) => a.amount === 160000)).toBe(true);
   });
 
@@ -98,7 +98,7 @@ describe('모의 OPERA — 블록 협의 요금', () => {
     ).toThrow(/알 수 없는 요금 코드/);
   });
 
-  // 그 요금으로 팔지 않는 타입이면 값을 매길 수 없다.
+  // A room type the rate does not sell cannot be priced.
   it('요금이 팔지 않는 객실 타입은 협의 요금을 요구한다', () => {
     mockOperaRequest('/rtp/v1/hotels/SAND01/ratePlans/CORP', {
       method: 'PATCH',
@@ -193,7 +193,7 @@ describe('모의 OPERA — 블록 픽업', () => {
     const second = after.roomTypeAllocations.find((a) => a.date === day(31));
 
     expect(first?.roomsPickedUp).toBe(1);
-    // 1박짜리 예약이므로 둘째 날은 건드리지 않는다.
+    // One-night stay, so the second date is untouched.
     expect(second?.roomsPickedUp).toBe(0);
   });
 
@@ -223,7 +223,7 @@ describe('모의 OPERA — 블록 픽업', () => {
     expect(list.reservations[0]?.guest.surname).toBe('Guest');
   });
 
-  // 룸리스트에는 보이는데 픽업은 0 이면 컷오프 판단 근거가 사라진다.
+  // Visible on the rooming list with zero pickup leaves no basis for cut-off.
   it('블록이 잡지 않은 객실 타입으로는 뺄 수 없다', () => {
     createBlock({ blockCode: 'ONLYSTD' }); // STDT 만 잡는다
 
@@ -323,7 +323,7 @@ describe('모의 OPERA — 블록 수정', () => {
     expect(updated.cutoffDate).toBe(day(20));
   });
 
-  // 예약이 이미 빠져나갔는데 블록을 지우면 그 예약의 요금 근거가 사라진다.
+  // Deleting a block with pickups removes the pricing basis for those reservations.
   it('픽업이 있는 블록은 취소할 수 없다', () => {
     const created = createBlock({ blockCode: 'HASPICK' });
     mockOperaRequest('/rsv/v1/hotels/SAND01/reservations', {

@@ -12,11 +12,11 @@ export const TransactionCode = Type.Object({
   transactionCode: Type.String(),
   hotelId: Type.String(),
   name: Type.String(),
-  /** 매출 그룹. 마감 분개에서 이 단위로 묶는다. */
+  /** Revenue group. The closing journal groups by this. */
   group: Type.String(),
   vatRate: Type.Number(),
   serviceChargeRate: Type.Number(),
-  /** 표시가격에 세금이 포함되어 있으면 true. */
+  /** True when tax is already inside the displayed price. */
   taxInclusive: Type.Boolean(),
   active: Type.Boolean(),
 });

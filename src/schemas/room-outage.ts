@@ -2,19 +2,19 @@ import { Type, type Static } from '@sinclair/typebox';
 import { DateString, HotelIdQuery } from './common.js';
 
 /**
- * 객실을 판매에서 빼는 두 가지 방식.
+ * Two ways to take a room off sale.
  *
- * OPERA 는 이 둘을 구분한다. 이름이 비슷해 같은 것으로 보기 쉽지만 실적 집계가
- * 달라진다.
+ * OPERA distinguishes them. The names look alike, but they report differently.
  *
- * - `OutOfOrder` — 물리적으로 쓸 수 없는 객실(누수·공사). **재고에서 빠진다.**
- *   판매 가능 수도, 점유율의 분모도 함께 줄어든다. 그래서 객실 20개 중 2개가
- *   OOO 이고 15개가 팔렸으면 점유율은 15/18 이다.
- * - `OutOfService` — 팔지 않을 뿐 객실은 멀쩡하다(대기 객실, 경미한 정비).
- *   **재고에는 남는다.** 분모는 20 그대로라 점유율은 15/20 이다.
  *
- * 정비 기간을 OOO 로 잡으면 점유율이 실제보다 높게, OOS 로 잡으면 낮게
- * 나온다. 어느 쪽을 쓸지는 호텔의 판단이므로 선택하게 두고 강제하지 않는다.
+ * - `OutOfOrder` — physically unusable (leak, construction). **Leaves inventory.**
+ *   Both sellable rooms and the occupancy denominator drop. With 20 rooms, 2 OOO
+ *   and 15 sold, occupancy is 15/18.
+ * - `OutOfService` — the room is fine, we just are not selling it (hold rooms,
+ *   light maintenance). **Stays in inventory.** The denominator is still 20, so 15/20.
+ *
+ * Booking maintenance as OOO reports occupancy higher than reality, as OOS lower.
+ * Which to use is the hotel's call, so we offer both and force neither.
  */
 export const RoomOutageKind = Type.Union(
   [Type.Literal('OutOfOrder'), Type.Literal('OutOfService')],
@@ -29,19 +29,19 @@ export const RoomOutage = Type.Object({
   roomNumber: Type.String(),
   roomType: Type.Optional(Type.String()),
   kind: RoomOutageKind,
-  /** 사용 불가 시작일(포함). */
+  /** First day out of service (inclusive). */
   startDate: DateString,
-  /** 사용 불가 종료일(포함). 이 날까지 팔 수 없고 다음 날부터 판매가 재개된다. */
+  /** Last day out of service (inclusive). Selling resumes the next day. */
   endDate: DateString,
   reason: Type.String(),
-  /** 기간이 끝나면 되돌릴 하우스키핑 상태. 대개 청소가 필요하므로 Dirty 다. */
+  /** Housekeeping status to restore afterwards. Usually Dirty — it needs cleaning. */
   returnStatus: Type.String(),
 });
 
 export const RoomOutageListQuery = Type.Object({
   hotelId: HotelIdQuery,
   roomNumber: Type.Optional(Type.String({ minLength: 1 })),
-  /** 이 날짜에 걸쳐 있는 건만 본다. 생략하면 전부 본다. */
+  /** Only outages covering this date. Omit for all of them. */
   onDate: Type.Optional(DateString),
 });
 
@@ -56,7 +56,7 @@ export const CreateRoomOutageBody = Type.Object({
   kind: RoomOutageKind,
   startDate: DateString,
   endDate: DateString,
-  // 사유 없는 사용 불가는 나중에 아무도 해제하지 못한다. 필수로 받는다.
+  // An outage with no reason is one nobody can release later. Require it.
   reason: Type.String({ minLength: 1, maxLength: 200 }),
   returnStatus: Type.Optional(Type.String({ minLength: 1 })),
 });

@@ -50,13 +50,13 @@ describe('모의 OPERA — 예약 경로', () => {
     });
   });
 
-  // 소문자로 들어온 코드가 다른 채널로 집계되면 안 된다.
+  // A lowercase code must not report as a different channel.
   it('코드는 대문자로 맞춘다', () => {
     const created = book({ sourceCode: 'ota', marketCode: 'leisure', channelCode: 'agoda' });
     expect(created.sourceOfBusiness.channelCode).toBe('AGODA');
   });
 
-  // 오타를 통과시키면 "BOOKINGCOM" 과 "BOOKING.COM" 이 다른 채널이 된다.
+  // Letting typos through makes BOOKINGCOM and BOOKING.COM two channels.
   it('설정에 없는 채널 코드는 거절한다', () => {
     expect(() => book({ channelCode: 'BOOKING.COM' })).toThrow(/판매 채널/);
   });

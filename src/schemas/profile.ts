@@ -5,7 +5,7 @@ export const OperaProfile = Type.Object({
   firstName: Type.Optional(Type.String()),
   lastName: Type.Optional(Type.String()),
   email: Type.Optional(Type.String()),
-  /** 병합되어 다른 프로필로 흡수되었으면 그 대상. */
+  /** Target profile, if this one was merged away. */
   mergedIntoId: Type.Optional(Type.String()),
 });
 
@@ -14,7 +14,7 @@ export const ProfileIdParams = Type.Object({
 });
 
 export const MergeProfileBody = Type.Object({
-  /** 남길 프로필. 이쪽으로 합쳐진다. */
+  /** Profile to keep. Everything merges into this one. */
   targetProfileId: Type.String({ minLength: 1 }),
 });
 
