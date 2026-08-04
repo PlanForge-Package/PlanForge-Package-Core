@@ -160,6 +160,42 @@ interface MockRoomOutage {
 /** 사용 불가 객실 기간. 예약 재고를 깎는 쪽이라 예약과 같은 수명으로 둔다. */
 const roomOutages = new Map<string, MockRoomOutage>();
 
+interface MockPosting {
+  postingId: string;
+  type: string;
+  transactionCode: string;
+  description: string;
+  /** 부호가 붙은 값. 청구는 양수, 결제는 음수다. */
+  amount: number;
+  currencyCode: string;
+  postedAt: string;
+  reference?: string;
+  voidedById?: string;
+  transferredFromWindow?: number;
+}
+
+interface MockFolio {
+  folioId: string;
+  reservationId: string;
+  hotelId: string;
+  window: number;
+  status: string;
+  currencyCode: string;
+  postings: MockPosting[];
+}
+
+/**
+ * 모의 폴리오 원장.
+ *
+ * 잔액은 저장하지 않는다. 거래 합계로 매번 다시 센다 — 증분으로 더해 가면 한
+ * 번의 실패가 영구적인 잔액 오차로 남는다.
+ */
+const folios = new Map<string, MockFolio>();
+
+const FOLIO_SEQUENCE_START = 800;
+let folioSequence = FOLIO_SEQUENCE_START;
+let postingSequence = FOLIO_SEQUENCE_START;
+
 const OUTAGE_SEQUENCE_START = 700;
 let outageSequence = OUTAGE_SEQUENCE_START;
 
@@ -362,6 +398,84 @@ function outageCoversDate(outage: MockRoomOutage, date: string): boolean {
   return outage.startDate <= date && outage.endDate >= date;
 }
 
+/** 잔액은 언제나 거래 합계다. 소수점 둘째 자리에서 끊는다. */
+function folioBalance(folio: MockFolio): number {
+  const total = folio.postings.reduce((sum, posting) => sum + posting.amount, 0);
+  return Math.round(total * 100) / 100;
+}
+
+function toFolioPayload(folio: MockFolio) {
+  return { ...folio, balance: folioBalance(folio) };
+}
+
+function reservationFolios(reservationId: string): MockFolio[] {
+  return [...folios.values()]
+    .filter((folio) => folio.reservationId === reservationId)
+    .sort((a, b) => a.window - b.window);
+}
+
+/**
+ * 예약의 폴리오를 찾고, 없으면 1번 창구를 연다.
+ *
+ * OPERA 는 예약을 만들 때 폴리오를 함께 만든다. 시드 예약까지 일일이 만들어
+ * 두는 대신 처음 필요해질 때 연다 — 밖에서 보이는 결과는 같다.
+ */
+function ensureFolio(hotelId: string, reservationId: string, window: number): MockFolio {
+  const existing = reservationFolios(reservationId).find((folio) => folio.window === window);
+  if (existing) return existing;
+
+  if (window !== 1) {
+    throw new OperaApiError(
+      404,
+      { detail: 'FOLIO_NOT_FOUND' },
+      `윈도 ${window} 이 열려 있지 않습니다.`,
+    );
+  }
+
+  const folioId = `FOL-${(folioSequence += 1)}`;
+  const folio: MockFolio = {
+    folioId,
+    reservationId,
+    hotelId,
+    window: 1,
+    status: 'Open',
+    currencyCode: 'KRW',
+    postings: [],
+  };
+  folios.set(folioId, folio);
+  return folio;
+}
+
+/** 거래 종류가 잔액 방향을 정한다. */
+function signedAmount(type: string, amount: number, negative?: boolean): number {
+  switch (type) {
+    case 'Charge':
+    case 'Tax':
+      return amount;
+    case 'Payment':
+      return -amount;
+    case 'Adjustment':
+      return negative ? -amount : amount;
+    default:
+      throw new OperaApiError(
+        400,
+        { detail: 'INVALID_POSTING_TYPE' },
+        `알 수 없는 거래 종류입니다: ${type}`,
+      );
+  }
+}
+
+function findPosting(
+  reservationId: string,
+  postingId: string,
+): { folio: MockFolio; posting: MockPosting } {
+  for (const folio of reservationFolios(reservationId)) {
+    const posting = folio.postings.find((row) => row.postingId === postingId);
+    if (posting) return { folio, posting };
+  }
+  throw new OperaApiError(404, { detail: 'NOT_FOUND' }, `거래를 찾을 수 없습니다: ${postingId}`);
+}
+
 /** 그 기간에 팔 수 있는 객실인지. 사용 불가 기간과 겹치면 배정할 수 없다. */
 function assertRoomAssignable(
   hotelId: string,
@@ -409,6 +523,19 @@ const NO_SHOW_FROM = ['Reserved', 'Confirmed', 'Waitlisted'];
 
 /** 체크인할 수 있는 출발 상태. 취소·노쇼된 예약으로 방을 내줄 수는 없다. */
 const CHECK_IN_FROM = ['Reserved', 'Confirmed'];
+
+/** OPERA 는 예약당 폴리오 윈도를 8개까지 둔다. */
+const MAX_FOLIO_WINDOW = 8;
+
+function assertReservationExists(reservationId: string): void {
+  if (!store.has(reservationId)) {
+    throw new OperaApiError(
+      404,
+      { detail: 'NOT_FOUND' },
+      `예약을 찾을 수 없습니다: ${reservationId}`,
+    );
+  }
+}
 
 function assertNoShowAllowed(reservation: MockReservation, businessDate: string): void {
   if (!NO_SHOW_FROM.includes(reservation.reservationStatus)) {
@@ -1042,6 +1169,231 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
     return created as T;
   }
 
+  // --- 폴리오 · 거래 -------------------------------------------------------
+  const folioListMatch = /\/reservations\/([^/]+)\/folios$/.exec(path);
+  if (folioListMatch && method === 'GET') {
+    const reservationId = decodeURIComponent(folioListMatch[1] ?? '');
+    assertReservationExists(reservationId);
+
+    const list = reservationFolios(reservationId);
+    // 아직 하나도 없으면 1번 창구를 열어 돌려준다. 빈 배열을 주면 호출자가
+    // 창구가 닫힌 것으로 오해한다.
+    if (list.length === 0) ensureFolio(hotelId, reservationId, 1);
+
+    return {
+      reservationId,
+      folios: reservationFolios(reservationId).map(toFolioPayload),
+    } as T;
+  }
+
+  if (folioListMatch && method === 'POST') {
+    const reservationId = decodeURIComponent(folioListMatch[1] ?? '');
+    assertReservationExists(reservationId);
+
+    const existing = reservationFolios(reservationId);
+    const used = new Set(existing.map((folio) => folio.window));
+    if (used.size === 0) {
+      ensureFolio(hotelId, reservationId, 1);
+      used.add(1);
+    }
+
+    let window = body.window === undefined ? undefined : Number(body.window);
+    if (window === undefined) {
+      window = 1;
+      while (used.has(window) && window <= MAX_FOLIO_WINDOW) window += 1;
+    }
+
+    if (window > MAX_FOLIO_WINDOW) {
+      throw new OperaApiError(
+        400,
+        { detail: 'TOO_MANY_WINDOWS' },
+        `폴리오 윈도는 ${MAX_FOLIO_WINDOW}개까지만 열 수 있습니다.`,
+      );
+    }
+    if (used.has(window)) {
+      throw new OperaApiError(
+        409,
+        { detail: 'WINDOW_IN_USE' },
+        `윈도 ${window} 은 이미 열려 있습니다.`,
+      );
+    }
+
+    const folioId = `FOL-${(folioSequence += 1)}`;
+    const folio: MockFolio = {
+      folioId,
+      reservationId,
+      hotelId,
+      window,
+      status: 'Open',
+      currencyCode: 'KRW',
+      postings: [],
+    };
+    folios.set(folioId, folio);
+    return toFolioPayload(folio) as T;
+  }
+
+  const postingMatch = /\/reservations\/([^/]+)\/folios\/(\d+)\/postings$/.exec(path);
+  if (postingMatch && method === 'POST') {
+    const reservationId = decodeURIComponent(postingMatch[1] ?? '');
+    assertReservationExists(reservationId);
+    const window = Number(postingMatch[2]);
+    const folio = ensureFolio(hotelId, reservationId, window);
+
+    if (folio.status === 'Closed') {
+      throw new OperaApiError(
+        400,
+        { detail: 'FOLIO_CLOSED' },
+        `윈도 ${window} 은 이미 마감되었습니다.`,
+      );
+    }
+
+    /*
+     * 같은 전표는 한 번만 달린다.
+     *
+     * 네트워크가 끊겨 POS 가 재전송하는 일은 흔하다. 두 번 달리면 손님에게 두 번
+     * 청구되고 되돌리기 어렵다. 이미 있으면 그것을 그대로 돌려준다 — 호출자
+     * 입장에서 성공으로 보여야 재시도가 멈춘다.
+     */
+    const reference = body.reference ? String(body.reference) : undefined;
+    if (reference) {
+      for (const candidate of reservationFolios(reservationId)) {
+        const duplicate = candidate.postings.find((row) => row.reference === reference);
+        if (duplicate) return toFolioPayload(candidate) as T;
+      }
+    }
+
+    const postingId = `PST-${(postingSequence += 1)}`;
+    folio.postings.push({
+      postingId,
+      type: String(body.type ?? ''),
+      transactionCode: String(body.transactionCode ?? ''),
+      description: String(body.description ?? ''),
+      amount: signedAmount(
+        String(body.type ?? ''),
+        Number(body.amount ?? 0),
+        Boolean(body.negative),
+      ),
+      currencyCode: folio.currencyCode,
+      postedAt: new Date().toISOString(),
+      ...(reference ? { reference } : {}),
+    });
+
+    return toFolioPayload(folio) as T;
+  }
+
+  const voidMatch = /\/reservations\/([^/]+)\/folios\/postings\/([^/]+)\/void$/.exec(path);
+  if (voidMatch && method === 'POST') {
+    const reservationId = decodeURIComponent(voidMatch[1] ?? '');
+    assertReservationExists(reservationId);
+    const { folio, posting } = findPosting(reservationId, decodeURIComponent(voidMatch[2] ?? ''));
+
+    if (posting.voidedById) {
+      throw new OperaApiError(
+        409,
+        { detail: 'ALREADY_VOIDED' },
+        `이미 취소된 거래입니다: ${posting.postingId}`,
+      );
+    }
+    if (folio.status === 'Closed') {
+      throw new OperaApiError(
+        400,
+        { detail: 'FOLIO_CLOSED' },
+        '마감된 폴리오의 거래는 취소할 수 없습니다.',
+      );
+    }
+
+    // 지우지 않고 반대 부호 조정을 단다. 지우면 손님 명세서에서 요금이 통째로
+    // 사라져 무엇이 정정됐는지 설명할 수 없다.
+    const reversalId = `PST-${(postingSequence += 1)}`;
+    folio.postings.push({
+      postingId: reversalId,
+      type: 'Adjustment',
+      transactionCode: posting.transactionCode,
+      description: `[취소] ${posting.description}`,
+      amount: -posting.amount,
+      currencyCode: folio.currencyCode,
+      postedAt: new Date().toISOString(),
+      ...(body.reference ? { reference: String(body.reference) } : {}),
+    });
+    posting.voidedById = reversalId;
+
+    return toFolioPayload(folio) as T;
+  }
+
+  const transferMatch = /\/reservations\/([^/]+)\/folios\/postings\/([^/]+)\/transfer$/.exec(path);
+  if (transferMatch && method === 'POST') {
+    const reservationId = decodeURIComponent(transferMatch[1] ?? '');
+    assertReservationExists(reservationId);
+    const { folio, posting } = findPosting(
+      reservationId,
+      decodeURIComponent(transferMatch[2] ?? ''),
+    );
+
+    const toWindow = Number(body.toWindow ?? 0);
+    if (toWindow === folio.window) {
+      throw new OperaApiError(
+        400,
+        { detail: 'SAME_WINDOW' },
+        `이미 윈도 ${toWindow} 에 있는 거래입니다.`,
+      );
+    }
+
+    const target = reservationFolios(reservationId).find((row) => row.window === toWindow);
+    if (!target) {
+      throw new OperaApiError(
+        404,
+        { detail: 'FOLIO_NOT_FOUND' },
+        `윈도 ${toWindow} 이 열려 있지 않습니다.`,
+      );
+    }
+    if (folio.status === 'Closed' || target.status === 'Closed') {
+      throw new OperaApiError(
+        400,
+        { detail: 'FOLIO_CLOSED' },
+        '마감된 폴리오와는 거래를 주고받을 수 없습니다.',
+      );
+    }
+
+    // 취소된 짝은 함께 있어야 한다. 한쪽만 옮기면 양쪽 잔액이 모두 틀어진다.
+    if (posting.voidedById) {
+      throw new OperaApiError(400, { detail: 'VOIDED_POSTING' }, '취소된 거래는 옮길 수 없습니다.');
+    }
+    const isReversal = folio.postings.some((row) => row.voidedById === posting.postingId);
+    if (isReversal) {
+      throw new OperaApiError(400, { detail: 'VOID_ADJUSTMENT' }, '취소 조정은 옮길 수 없습니다.');
+    }
+
+    folio.postings = folio.postings.filter((row) => row.postingId !== posting.postingId);
+    target.postings.push({ ...posting, transferredFromWindow: folio.window });
+
+    return {
+      reservationId,
+      folios: reservationFolios(reservationId).map(toFolioPayload),
+    } as T;
+  }
+
+  const closeMatch = /\/reservations\/([^/]+)\/folios\/(\d+)\/close$/.exec(path);
+  if (closeMatch && method === 'POST') {
+    const reservationId = decodeURIComponent(closeMatch[1] ?? '');
+    assertReservationExists(reservationId);
+    const window = Number(closeMatch[2]);
+    // 1번 창구는 예약이 있으면 언제나 존재한다. 거래 등록과 같은 규칙을 쓴다.
+    const folio = ensureFolio(hotelId, reservationId, window);
+
+    // 잔액이 남은 폴리오를 닫으면 매출 누락으로 이어진다.
+    const balance = folioBalance(folio);
+    if (balance !== 0) {
+      throw new OperaApiError(
+        400,
+        { detail: 'FOLIO_NOT_SETTLED' },
+        `잔액이 남아 있어 마감할 수 없습니다: ${balance}`,
+      );
+    }
+
+    folio.status = 'Closed';
+    return toFolioPayload(folio) as T;
+  }
+
   // --- 체크인 / 체크아웃 --------------------------------------------------
   const checkInMatch = /\/reservations\/([^/]+)\/checkIn$/.exec(path);
   if (checkInMatch && method === 'POST') {
@@ -1219,10 +1571,13 @@ export function resetMockStore(): void {
   store.clear();
   rooms.clear();
   roomOutages.clear();
+  folios.clear();
   blocks.clear();
   businessDates.clear();
   profiles.clear();
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
   outageSequence = OUTAGE_SEQUENCE_START;
+  folioSequence = FOLIO_SEQUENCE_START;
+  postingSequence = FOLIO_SEQUENCE_START;
 }

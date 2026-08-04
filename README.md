@@ -168,6 +168,11 @@ pnpm dev
 | `POST` | `/v1/reservations/:reservationId/no-show` | 노쇼 처리 |
 | `POST` | `/v1/reservations/:reservationId/check-in` | 체크인 (객실 배정 포함) |
 | `POST` | `/v1/reservations/:reservationId/check-out` | 체크아웃 |
+| `GET` `POST` | `/v1/reservations/:id/folios` | 폴리오 조회 · 창구 개설 |
+| `POST` | `/v1/reservations/:id/folios/:window/postings` | 거래 등록 |
+| `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 거래 취소 |
+| `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | 창구 간 이관 |
+| `POST` | `/v1/reservations/:id/folios/:window/close` | 폴리오 마감 |
 | `GET` | `/v1/blocks` | 단체 블록 목록 |
 | `GET` | `/v1/blocks/:blockId` | 블록 단건 — 일자·객실 타입별 할당 |
 | `GET` | `/v1/blocks/:blockId/reservations` | 룸리스트 |

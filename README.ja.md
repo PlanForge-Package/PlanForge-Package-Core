@@ -169,6 +169,11 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `POST` | `/v1/reservations/:reservationId/no-show` | ノーショー処理 |
 | `POST` | `/v1/reservations/:reservationId/check-in` | チェックイン（客室割当を含む） |
 | `POST` | `/v1/reservations/:reservationId/check-out` | チェックアウト |
+| `GET` `POST` | `/v1/reservations/:id/folios` | フォリオ照会・ウィンドウ開設 |
+| `POST` | `/v1/reservations/:id/folios/:window/postings` | 取引登録 |
+| `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | 取引取消 |
+| `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | ウィンドウ間移管 |
+| `POST` | `/v1/reservations/:id/folios/:window/close` | フォリオ締め |
 | `GET` | `/v1/blocks` | 団体ブロック一覧 |
 | `GET` | `/v1/blocks/:blockId` | ブロック単件 —— 日付・客室タイプ別の割当 |
 | `GET` | `/v1/blocks/:blockId/reservations` | ルーミングリスト |

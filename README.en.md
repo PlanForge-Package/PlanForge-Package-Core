@@ -171,6 +171,11 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `POST` | `/v1/reservations/:reservationId/no-show` | Mark no-show |
 | `POST` | `/v1/reservations/:reservationId/check-in` | Check in (with room assignment) |
 | `POST` | `/v1/reservations/:reservationId/check-out` | Check out |
+| `GET` `POST` | `/v1/reservations/:id/folios` | Read folios · open a window |
+| `POST` | `/v1/reservations/:id/folios/:window/postings` | Post a transaction |
+| `POST` | `/v1/reservations/:id/folios/postings/:postingId/void` | Void a transaction |
+| `POST` | `/v1/reservations/:id/folios/postings/:postingId/transfer` | Move between windows |
+| `POST` | `/v1/reservations/:id/folios/:window/close` | Close a folio |
 | `GET` | `/v1/blocks` | Group block list |
 | `GET` | `/v1/blocks/:blockId` | Single block — allotment by date and room type |
 | `GET` | `/v1/blocks/:blockId/reservations` | Rooming list |
