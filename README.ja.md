@@ -167,6 +167,8 @@ BE で `pnpm prisma:seed` を実行して揃えてください。
 | `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | シーズン料金の削除 |
 | `GET` `POST` | `/v1/packages` | パッケージ一覧・登録 |
 | `PATCH` | `/v1/packages/:packageCode` | パッケージ修正 |
+| `GET` `POST` | `/v1/transaction-codes` | 取引コード一覧・登録（売上グループ・税率）|
+| `PATCH` | `/v1/transaction-codes/:transactionCode` | 取引コード修正 |
 | `GET` | `/v1/reservations` | 予約一覧 |
 | `GET` | `/v1/reservations/:reservationId` | 予約単件 |
 | `POST` | `/v1/reservations` | 予約作成 |

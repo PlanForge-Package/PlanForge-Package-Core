@@ -169,6 +169,8 @@ profiles and blocks it issued, while BE's database keeps them, so the two can dr
 | `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | Remove a season |
 | `GET` `POST` | `/v1/packages` | Packages · create |
 | `PATCH` | `/v1/packages/:packageCode` | Update a package |
+| `GET` `POST` | `/v1/transaction-codes` | Transaction codes · create (revenue group, tax) |
+| `PATCH` | `/v1/transaction-codes/:transactionCode` | Update a transaction code |
 | `GET` | `/v1/reservations` | Reservation list |
 | `GET` | `/v1/reservations/:reservationId` | Single reservation |
 | `POST` | `/v1/reservations` | Create reservation |

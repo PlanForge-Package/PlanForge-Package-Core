@@ -161,6 +161,8 @@ pnpm dev
 | `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | 删除季节房价 |
 | `GET` `POST` | `/v1/packages` | 套餐列表 · 新建 |
 | `PATCH` | `/v1/packages/:packageCode` | 修改套餐 |
+| `GET` `POST` | `/v1/transaction-codes` | 交易代码列表 · 新建（营收分组与税率）|
+| `PATCH` | `/v1/transaction-codes/:transactionCode` | 修改交易代码 |
 | `GET` | `/v1/reservations` | 预订列表 |
 | `GET` | `/v1/reservations/:reservationId` | 单条预订 |
 | `POST` | `/v1/reservations` | 创建预订 |

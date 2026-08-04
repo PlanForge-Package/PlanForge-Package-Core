@@ -166,6 +166,8 @@ pnpm dev
 | `DELETE` | `/v1/rate-plans/:ratePlanCode/seasons/:seasonId` | 시즌 요금 삭제 |
 | `GET` `POST` | `/v1/packages` | 패키지 목록 · 등록 |
 | `PATCH` | `/v1/packages/:packageCode` | 패키지 수정 |
+| `GET` `POST` | `/v1/transaction-codes` | 거래 코드 목록 · 등록 (매출 그룹·세율) |
+| `PATCH` | `/v1/transaction-codes/:transactionCode` | 거래 코드 수정 |
 | `GET` | `/v1/reservations` | 예약 목록 |
 | `GET` | `/v1/reservations/:reservationId` | 예약 단건 |
 | `POST` | `/v1/reservations` | 예약 생성 |

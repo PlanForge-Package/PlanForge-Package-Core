@@ -205,8 +205,147 @@ const ratePlans = new Map<string, MockRatePlan>();
 const packages = new Map<string, MockPackage>();
 let seasonSequence = 0;
 
+/**
+ * 거래 코드.
+ *
+ * 회계 분개의 기준이다. 어떤 매출 그룹으로 잡히고 세금이 어떻게 붙는지가 여기
+ * 달려 있어, 설정 없는 코드로 올라간 금액은 마감에서 어디로 보낼지 알 수 없다.
+ *
+ * 국내 호텔은 표시가격에 부가세·봉사료를 포함해 판다. 그래서 금액은 그대로 두고
+ * 마감에서 공급가액·부가세·봉사료로 나눈다 — 세금을 따로 더하면 손님에게 안내한
+ * 금액과 청구가 달라진다.
+ */
+interface MockTransactionCode {
+  transactionCode: string;
+  hotelId: string;
+  name: string;
+  /** Room = 객실, FoodBeverage = 식음, Other = 기타, Payment = 결제. */
+  group: string;
+  /** 부가세율. 0.1 이면 10%. */
+  vatRate: number;
+  /** 봉사료율. 식음은 보통 10%, 객실은 0 이다. */
+  serviceChargeRate: number;
+  /** 표시가격에 세금이 포함되어 있으면 true. */
+  taxInclusive: boolean;
+  active: boolean;
+}
+
+const transactionCodes = new Map<string, MockTransactionCode>();
+
 function planKey(hotelId: string, code: string): string {
   return `${hotelId}::${code.toUpperCase()}`;
+}
+
+function seedTransactionCodes(): void {
+  if (transactionCodes.size > 0) return;
+  const hotelId = 'SAND01';
+
+  const seeds: Array<Omit<MockTransactionCode, 'hotelId' | 'active'>> = [
+    {
+      transactionCode: '1000',
+      name: '객실료',
+      group: 'Room',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '1100',
+      name: '엑스트라 베드',
+      group: 'Room',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '2000',
+      name: '조식',
+      group: 'FoodBeverage',
+      vatRate: 0.1,
+      serviceChargeRate: 0.1,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '2100',
+      name: '주차',
+      group: 'Other',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '2200',
+      name: '레이트 체크아웃',
+      group: 'Other',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '3000',
+      name: '레스토랑',
+      group: 'FoodBeverage',
+      vatRate: 0.1,
+      serviceChargeRate: 0.1,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '3100',
+      name: '미니바',
+      group: 'FoodBeverage',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '4000',
+      name: '세탁',
+      group: 'Other',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '5000',
+      name: '결제',
+      group: 'Payment',
+      vatRate: 0,
+      serviceChargeRate: 0,
+      taxInclusive: false,
+    },
+    {
+      transactionCode: '6000',
+      name: '거래처 이관',
+      group: 'Payment',
+      vatRate: 0,
+      serviceChargeRate: 0,
+      taxInclusive: false,
+    },
+    {
+      transactionCode: '7000',
+      name: '조정',
+      group: 'Other',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+    {
+      transactionCode: '9000',
+      name: '기타',
+      group: 'Other',
+      vatRate: 0.1,
+      serviceChargeRate: 0,
+      taxInclusive: true,
+    },
+  ];
+
+  for (const seed of seeds) {
+    transactionCodes.set(planKey(hotelId, seed.transactionCode), {
+      ...seed,
+      hotelId,
+      active: true,
+    });
+  }
 }
 
 function seedRates(): void {
@@ -968,6 +1107,7 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
   seedOutages();
   seedBlocks();
   seedRates();
+  seedTransactionCodes();
 
   const method = options.method ?? 'GET';
   const query = options.query ?? {};
@@ -1035,6 +1175,75 @@ function handleMockRequest<T>(path: string, options: OperaRequestOptions): T {
       );
 
     return { ratePlans: offers } as T;
+  }
+
+  // --- 거래 코드 -----------------------------------------------------------
+  if (/\/csh\/v1\/hotels\/[^/]+\/transactionCodes$/.test(path)) {
+    if (method === 'GET') {
+      return {
+        transactionCodes: [...transactionCodes.values()].filter(
+          (row) => row.hotelId === hotelId && (query.includeInactive === 'true' || row.active),
+        ),
+      } as T;
+    }
+    if (method === 'POST') {
+      const code = String(body.transactionCode ?? '').trim();
+      if (!code) {
+        throw new OperaApiError(400, { detail: 'INVALID_CODE' }, '거래 코드가 필요합니다.');
+      }
+      if (transactionCodes.has(planKey(hotelId, code))) {
+        throw new OperaApiError(
+          409,
+          { detail: 'DUPLICATE_CODE' },
+          `이미 쓰고 있는 거래 코드입니다: ${code}`,
+        );
+      }
+      const group = String(body.group ?? 'Other');
+      assertCode(['Room', 'FoodBeverage', 'Other', 'Payment'], group, '매출 그룹');
+
+      const created: MockTransactionCode = {
+        transactionCode: code,
+        hotelId,
+        name: String(body.name ?? code),
+        group,
+        vatRate: Number(body.vatRate ?? 0.1),
+        serviceChargeRate: Number(body.serviceChargeRate ?? 0),
+        taxInclusive: body.taxInclusive === undefined ? true : Boolean(body.taxInclusive),
+        active: true,
+      };
+      transactionCodes.set(planKey(hotelId, code), created);
+      return created as T;
+    }
+  }
+
+  const txnCodeMatch = /\/csh\/v1\/hotels\/[^/]+\/transactionCodes\/([^/]+)$/.exec(path);
+  if (txnCodeMatch && (method === 'PATCH' || method === 'PUT')) {
+    const code = decodeURIComponent(txnCodeMatch[1] ?? '');
+    const existing = transactionCodes.get(planKey(hotelId, code));
+    if (!existing) {
+      throw new OperaApiError(
+        404,
+        { detail: 'NOT_FOUND' },
+        `거래 코드를 찾을 수 없습니다: ${code}`,
+      );
+    }
+    if (body.group !== undefined) {
+      assertCode(['Room', 'FoodBeverage', 'Other', 'Payment'], String(body.group), '매출 그룹');
+    }
+
+    const updated: MockTransactionCode = {
+      ...existing,
+      ...(body.name === undefined ? {} : { name: String(body.name) }),
+      ...(body.group === undefined ? {} : { group: String(body.group) }),
+      ...(body.vatRate === undefined ? {} : { vatRate: Number(body.vatRate) }),
+      ...(body.serviceChargeRate === undefined
+        ? {}
+        : { serviceChargeRate: Number(body.serviceChargeRate) }),
+      ...(body.taxInclusive === undefined ? {} : { taxInclusive: Boolean(body.taxInclusive) }),
+      ...(body.active === undefined ? {} : { active: Boolean(body.active) }),
+    };
+    transactionCodes.set(planKey(hotelId, code), updated);
+    return updated as T;
   }
 
   // --- 요금 코드 관리 ------------------------------------------------------
@@ -2543,6 +2752,7 @@ export function resetMockStore(): void {
   profiles.clear();
   ratePlans.clear();
   packages.clear();
+  transactionCodes.clear();
   sequence = SEQUENCE_START;
   blockSequence = BLOCK_SEQUENCE_START;
   outageSequence = OUTAGE_SEQUENCE_START;
