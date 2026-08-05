@@ -31,7 +31,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['blocks'],
-        summary: '단체 블록 목록',
+        summary: 'Group blocks',
         querystring: BlockListQuery,
         response: { 200: BlockListResponse, 502: ErrorResponse },
       },
@@ -59,7 +59,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['blocks'],
-        summary: '블록 단건 — 일자·객실 타입별 할당 포함',
+        summary: 'One block, with allotments by date and room type',
         params: BlockIdParams,
         response: { 200: Block, 404: ErrorResponse, 502: ErrorResponse },
       },
@@ -79,7 +79,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['blocks'],
-        summary: '룸리스트 — 이 블록에서 빠져나간 예약',
+        summary: 'Rooming list — reservations picked up from this block',
         params: BlockIdParams,
         response: { 200: ReservationListResponse, 404: ErrorResponse, 502: ErrorResponse },
       },
@@ -113,7 +113,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['blocks'],
-        summary: '블록 생성 — 재고 확보는 OPERA 가 판단합니다',
+        summary: 'Create a block — OPERA decides whether inventory can be held',
         body: CreateBlockBody,
         response: { 201: Block, 400: ErrorResponse, 409: ErrorResponse, 502: ErrorResponse },
       },
@@ -151,7 +151,7 @@ export const blockRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['blocks'],
-        summary: '블록 수정 — 이름·상태·컷오프',
+        summary: 'Update a block — name, status, cutoff',
         params: BlockIdParams,
         body: UpdateBlockBody,
         response: { 200: Block, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },

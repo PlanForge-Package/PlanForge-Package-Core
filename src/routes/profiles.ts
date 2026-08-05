@@ -38,7 +38,7 @@ export const profileRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['profiles'],
-        summary: '프로필 단건',
+        summary: 'One profile',
         params: ProfileIdParams,
         response: { 200: OperaProfile, 404: ErrorResponse, 502: ErrorResponse },
       },
@@ -58,7 +58,7 @@ export const profileRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['profiles'],
-        summary: '중복 병합 — 이 프로필을 대상으로 합칩니다',
+        summary: 'Merge a duplicate into this profile',
         params: ProfileIdParams,
         body: MergeProfileBody,
         response: { 200: OperaProfile, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },

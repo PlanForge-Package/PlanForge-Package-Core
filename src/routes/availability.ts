@@ -10,7 +10,7 @@ export const availabilityRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['availability'],
-        summary: '기간별 객실 가용 현황 조회',
+        summary: 'Availability over a date range',
         description: 'OPERA Cloud 의 가용 재고를 조회해 PlanForge 표준 형태로 반환합니다.',
         querystring: AvailabilityQuery,
         response: {

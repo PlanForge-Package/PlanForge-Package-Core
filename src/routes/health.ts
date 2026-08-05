@@ -8,7 +8,7 @@ export const healthRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['health'],
-        summary: '서비스 상태 확인',
+        summary: 'Service health',
         response: {
           200: Type.Object({
             status: Type.Literal('ok'),

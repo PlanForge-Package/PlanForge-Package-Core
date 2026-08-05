@@ -34,7 +34,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '예약의 폴리오와 거래 내역',
+        summary: 'Folios and postings for a reservation',
         params: FolioParams,
         response: { 200: FolioListResponse, 404: ErrorResponse, 502: ErrorResponse },
       },
@@ -60,7 +60,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '폴리오 윈도 개설 — 분할 정산',
+        summary: 'Open a folio window, for a split settlement',
         params: FolioParams,
         body: OpenFolioBody,
         response: {
@@ -98,7 +98,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '보증금 수납 — 폴리오에 결제로 올립니다',
+        summary: 'Take a deposit — posted to the folio as a payment',
         params: FolioParams,
         body: DepositBody,
         response: {
@@ -130,7 +130,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '거래 등록 — 잔액은 OPERA 가 계산합니다',
+        summary: 'Post a transaction — OPERA computes the balance',
         params: FolioWindowParams,
         body: CreatePostingBody,
         response: { 200: Folio, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -154,7 +154,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '거래 취소 — 원본을 지우지 않고 반대 조정을 답니다',
+        summary: 'Void a posting — the original is kept and an opposite adjustment added',
         params: PostingParams,
         body: VoidPostingBody,
         response: {
@@ -184,7 +184,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '거래를 다른 창구로 이관',
+        summary: 'Transfer a posting to another window',
         params: PostingParams,
         body: TransferPostingBody,
         response: {
@@ -215,7 +215,7 @@ export const folioRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['folios'],
-        summary: '폴리오 마감 — 잔액이 0 이어야 합니다',
+        summary: 'Close a folio — the balance must be zero',
         params: FolioWindowParams,
         body: CloseFolioBody,
         response: { 200: Folio, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },

@@ -10,7 +10,7 @@ const PUBLIC_PREFIXES = ['/health', '/docs', '/openapi.json'];
 
 const authPlugin: FastifyPluginAsync = async (app) => {
   if (!env.serviceApiKey) {
-    app.log.warn('SERVICE_API_KEY 가 비어 있어 Core API 인증이 비활성화되었습니다.');
+    app.log.warn('SERVICE_API_KEY is empty, so Core API authentication is disabled.');
     return;
   }
 

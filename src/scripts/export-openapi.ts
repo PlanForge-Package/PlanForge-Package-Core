@@ -15,7 +15,7 @@ async function main(): Promise<void> {
 
   await app.close();
 
-  console.log(`OpenAPI 문서를 ${outPath} 에 저장했습니다.`);
+  console.log(`Wrote the OpenAPI document to ${outPath}.`);
 }
 
 main().catch((error) => {

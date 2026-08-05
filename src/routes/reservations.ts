@@ -56,7 +56,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '예약 목록 조회',
+        summary: 'Reservations',
         querystring: ReservationListQuery,
         response: { 200: ReservationListResponse, 502: ErrorResponse },
       },
@@ -104,7 +104,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '예약 단건 조회',
+        summary: 'One reservation',
         params: ReservationIdParams,
         response: { 200: Reservation, 404: ErrorResponse, 502: ErrorResponse },
       },
@@ -124,7 +124,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '예약 생성 — OPERA 가 재고와 요금을 판단합니다',
+        summary: 'Create a reservation — OPERA decides inventory and price',
         body: CreateReservationBody,
         response: {
           201: Reservation,
@@ -168,7 +168,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '예약 수정 — 날짜·객실 타입·인원',
+        summary: 'Update a reservation — dates, room type, occupancy',
         params: ReservationIdParams,
         body: UpdateReservationBody,
         response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -201,7 +201,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '취소 조건·보증금 — 취소 전에 얼마를 물게 되는지',
+        summary: 'Cancellation terms and deposit — what will be charged before cancelling',
         params: ReservationIdParams,
         querystring: Type.Object({ hotelId: HotelIdQuery }),
         response: { 200: ReservationPolicies, 404: ErrorResponse, 502: ErrorResponse },
@@ -241,7 +241,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '보증 방식 변경 — 노쇼를 어떻게 다룰지가 여기서 갈립니다',
+        summary: 'Change the guarantee — it decides how a no-show is handled',
         params: ReservationIdParams,
         body: SetGuaranteeBody,
         response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -266,7 +266,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '체크인 — 객실 배정을 OPERA 가 기록합니다',
+        summary: 'Check in — OPERA records the room assignment',
         params: ReservationIdParams,
         body: CheckInBody,
         response: {
@@ -305,7 +305,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '체크아웃 — 객실을 비우고 청소 대상으로 돌립니다',
+        summary: 'Check out — frees the room and returns it for cleaning',
         params: ReservationIdParams,
         body: CheckOutBody,
         response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -328,7 +328,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '객실 공유 — 두 예약이 한 방을 쓰고 계산은 따로 합니다',
+        summary: 'Share a room — two reservations, one room, separate folios',
         params: ReservationIdParams,
         body: ShareReservationBody,
         response: {
@@ -367,7 +367,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '공유 해제 — 이 예약만 묶음에서 뺍니다',
+        summary: 'Unshare — removes only this reservation from the group',
         params: ReservationIdParams,
         body: UnshareBody,
         response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -390,7 +390,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '대기 확정 — 확정 시점에 재고를 다시 확인합니다',
+        summary: 'Confirm a waitlist booking — availability is re-checked at that moment',
         params: ReservationIdParams,
         body: ConfirmWaitlistBody,
         response: {
@@ -425,7 +425,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '노쇼 처리 — 도착일이 지나도록 오지 않은 예약',
+        summary: 'Mark a no-show — never arrived by the arrival date',
         params: ReservationIdParams,
         body: NoShowBody,
         response: { 200: Reservation, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -457,7 +457,7 @@ export const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['reservations'],
-        summary: '예약 취소',
+        summary: 'Cancel a reservation',
         params: ReservationIdParams,
         body: CancelReservationBody,
         response: { 200: Reservation, 404: ErrorResponse, 502: ErrorResponse },

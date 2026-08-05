@@ -23,7 +23,7 @@ export const nightAuditRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['night-audit'],
-        summary: '호텔 영업일 — OPERA 가 들고 있는 값',
+        summary: "The hotel's business date, as OPERA holds it",
         querystring: BusinessDateQuery,
         response: { 200: BusinessDate, 502: ErrorResponse },
       },

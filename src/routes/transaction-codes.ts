@@ -26,7 +26,7 @@ export const transactionCodeRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['cashiering'],
-        summary: '거래 코드 목록 — 매출 그룹과 세율',
+        summary: 'Transaction codes, with revenue group and tax rates',
         querystring: TransactionCodeListQuery,
         response: { 200: TransactionCodeListResponse, 502: ErrorResponse },
       },
@@ -51,7 +51,7 @@ export const transactionCodeRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['cashiering'],
-        summary: '거래 코드 등록 — OPERA 가 기록의 원천입니다',
+        summary: 'Create a transaction code — OPERA is the system of record',
         body: CreateTransactionCodeBody,
         response: {
           201: TransactionCode,
@@ -79,7 +79,7 @@ export const transactionCodeRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['cashiering'],
-        summary: '거래 코드 수정 — 세율·매출 그룹·사용 중지',
+        summary: 'Update a transaction code — tax rates, revenue group, deactivation',
         params: TransactionCodeParams,
         body: UpdateTransactionCodeBody,
         response: {

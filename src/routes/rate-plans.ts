@@ -37,7 +37,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '요금 코드 목록',
+        summary: 'Rate codes',
         querystring: RatePlanListQuery,
         response: { 200: RatePlanListResponse, 502: ErrorResponse },
       },
@@ -59,7 +59,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '요금 코드 단건',
+        summary: 'One rate code',
         params: RatePlanParams,
         querystring: RatePlanListQuery,
         response: { 200: RatePlan, 400: ErrorResponse, 502: ErrorResponse },
@@ -82,7 +82,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '요금 코드 등록 — OPERA 가 기록의 원천입니다',
+        summary: 'Create a rate code — OPERA is the system of record',
         body: CreateRatePlanBody,
         response: { 201: RatePlan, 400: ErrorResponse, 409: ErrorResponse, 502: ErrorResponse },
       },
@@ -106,7 +106,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '요금 코드 수정 — 판매 기간·기준 요금·패키지',
+        summary: 'Update a rate code — selling period, base rates, packages',
         params: RatePlanParams,
         body: UpdateRatePlanBody,
         response: { 200: RatePlan, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -130,7 +130,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '시즌 요금 추가 — 기간·요일로 기준 요금을 덮어씁니다',
+        summary: 'Add a season — overrides the base rate by date range and weekday',
         params: RatePlanParams,
         body: CreateSeasonBody,
         response: { 201: RatePlan, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -156,7 +156,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '시즌 요금 삭제',
+        summary: 'Remove a season',
         params: SeasonParams,
         body: DeleteSeasonBody,
         response: { 200: RatePlan, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },
@@ -183,7 +183,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '패키지 목록',
+        summary: 'Packages',
         querystring: PackageListQuery,
         response: { 200: PackageListResponse, 502: ErrorResponse },
       },
@@ -204,7 +204,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '패키지 등록',
+        summary: 'Create a package',
         body: CreatePackageBody,
         response: { 201: RatePackage, 400: ErrorResponse, 409: ErrorResponse, 502: ErrorResponse },
       },
@@ -228,7 +228,7 @@ export const ratePlanRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '패키지 수정',
+        summary: 'Update a package',
         params: PackageParams,
         body: UpdatePackageBody,
         response: { 200: RatePackage, 400: ErrorResponse, 404: ErrorResponse, 502: ErrorResponse },

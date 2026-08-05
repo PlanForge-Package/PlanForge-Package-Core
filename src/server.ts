@@ -8,7 +8,7 @@ async function main(): Promise<void> {
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
-      app.log.info(`${signal} 수신 — 서버를 종료합니다.`);
+      app.log.info(`Received ${signal} — shutting down.`);
       void app.close().then(() => process.exit(0));
     });
   }

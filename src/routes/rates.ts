@@ -17,7 +17,7 @@ export const rateRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['rates'],
-        summary: '기간별 요금 조회',
+        summary: 'Rates over a date range',
         querystring: RateQuery,
         response: { 200: RateResponse, 502: ErrorResponse },
       },

@@ -26,7 +26,7 @@ export const housekeepingRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['housekeeping'],
-        summary: '객실 상태 목록',
+        summary: 'Room statuses',
         querystring: RoomStatusListQuery,
         response: { 200: RoomStatusListResponse, 502: ErrorResponse },
       },
@@ -51,7 +51,7 @@ export const housekeepingRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['housekeeping'],
-        summary: '객실 상태 변경 — OPERA 가 기록의 원천입니다',
+        summary: 'Change a room status — OPERA is the system of record',
         params: RoomStatusParams,
         body: UpdateRoomStatusBody,
         response: {

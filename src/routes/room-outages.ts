@@ -28,7 +28,7 @@ export const roomOutageRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['housekeeping'],
-        summary: '사용 불가 객실 목록',
+        summary: 'Rooms out of service',
         querystring: RoomOutageListQuery,
         response: { 200: RoomOutageListResponse, 502: ErrorResponse },
       },
@@ -53,7 +53,7 @@ export const roomOutageRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['housekeeping'],
-        summary: '객실을 사용 불가로 등록 — OPERA 가 기록의 원천입니다',
+        summary: 'Take a room out of service — OPERA is the system of record',
         body: CreateRoomOutageBody,
         response: {
           201: RoomOutage,
@@ -91,7 +91,7 @@ export const roomOutageRoutes: FastifyPluginAsyncTypebox = async (app) => {
     {
       schema: {
         tags: ['housekeeping'],
-        summary: '사용 불가 해제 — 객실을 다시 판매합니다',
+        summary: 'Release an outage — the room goes back on sale',
         params: RoomOutageParams,
         body: ReleaseRoomOutageBody,
         response: { 200: RoomOutage, 404: ErrorResponse, 502: ErrorResponse },
